@@ -42,6 +42,26 @@ app.layout = dbc.Container([
                                     'fontWeight': 'bold'}),
                              className="mb-4")),
     dcc.Store(id='login-state', data=False), 
+    dbc.Row(dbc.Col(dcc.Dropdown(
+    id='year-dropdown',
+    placeholder="Seleccione un año",
+    style={'width': '100%'} 
+    )), className="mb-3"),  
+    dbc.Row(dbc.Col(dcc.Dropdown(
+    id='month-dropdown',
+    placeholder="Seleccione un mes",
+    style={'width': '100%'} 
+    ))),  
+
+    dbc.Row(dbc.Col(html.Div(id='weather-condition-frequency'), className="mb-3")),
+    html.Div([
+    html.Label('Selecciona alguna opción:', style={'margin-bottom': '15px'}),
+    condition_dropdown,
+    ]),
+    dcc.Loading(id='loading-div', children=[dcc.Graph(id='evolution-graph')]),
+    html.Div(id='condition-days-table'),
+    dcc.Loading(id='loading-div2', children=[dcc.Graph(id='condition-average-graph')]),
+    html.Div(id='upload-timestamp', style={'display': 'none'}),
     html.Div([
     html.Button('Login', id='login-button', n_clicks=0, style={
     'background-color': '#007BFF',  
@@ -78,26 +98,6 @@ app.layout = dbc.Container([
         children=[html.Div(id='output-data-upload')],
         type="default",
     )), className="mb-3"),
-    dbc.Row(dbc.Col(dcc.Dropdown(
-    id='year-dropdown',
-    placeholder="Seleccione un año",
-    style={'width': '100%'} 
-    )), className="mb-3"),  
-    dbc.Row(dbc.Col(dcc.Dropdown(
-    id='month-dropdown',
-    placeholder="Seleccione un mes",
-    style={'width': '100%'} 
-    ))),  
-
-    dbc.Row(dbc.Col(html.Div(id='weather-condition-frequency'), className="mb-3")),
-    html.Div([
-    html.Label('Selecciona alguna opción:', style={'margin-bottom': '15px'}),
-    condition_dropdown,
-    ]),
-    dcc.Loading(id='loading-div', children=[dcc.Graph(id='evolution-graph')]),
-    html.Div(id='condition-days-table'),
-    dcc.Loading(id='loading-div2', children=[dcc.Graph(id='condition-average-graph')]),
-    html.Div(id='upload-timestamp', style={'display': 'none'}),
 ], fluid=True, style={'padding': '20px'})
 
 
