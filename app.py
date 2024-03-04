@@ -17,19 +17,21 @@ import time
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP], suppress_callback_exceptions=True)
 server = app.server
 
-# Define the condition dropdown component
 condition_dropdown = dcc.Dropdown(
     id='condition-dropdown',
     options=[
+        {'label': 'Todas', 'value': 'Todas'},  
         {'label': 'Soleado', 'value': 'Soleado'},
         {'label': 'Lluvioso', 'value': 'Lluvioso'},
         {'label': 'Nublado', 'value': 'Nublado'},
         {'label': 'Helada', 'value': 'Helada'}
     ],
-    placeholder="Selecciona alguna opción",  # This will be shown when no option is selected
-    clearable=False,  # Prevents the user from clearing the selection, ensuring a value is always selected
-    searchable=False  # Optional: makes the dropdown not searchable, simplifying the UI
+    placeholder="Selecciona alguna opción",
+    clearable=False,
+    searchable=False
 )
+
+
 
 
 # Layout setup
@@ -242,11 +244,10 @@ def update_graph(selected_month, selected_year):
 )
 def update_evolution_graph(selected_month, selected_year, selected_condition, _):
     
-      # Return an empty graph if month, year, or condition is not selected
-    if not selected_month or not selected_year or not selected_condition:
+# Return an empty graph if month, year, or condition is not selected
+    if not selected_month or not selected_year or selected_condition is None:
         return go.Figure()
 
-    
     # Connect to the database and execute the query
     with engine.connect() as conn:
         query = f"""
@@ -260,38 +261,60 @@ def update_evolution_graph(selected_month, selected_year, selected_condition, _)
     # Convert 'Fecha' to datetime and map responses to numerical values
     df['Fecha'] = pd.to_datetime(df['Fecha'])
     response_mapping = {'Poco': 1, 'Normal': 2, 'Mucho': 3}
-    for condition in ['Soleado', 'Lluvioso', 'Nublado', 'Helada']:
-        df[condition] = df[condition].map(response_mapping)
-
-    # Group the DataFrame by 'Fecha' and calculate the mean and count
-    df = df.groupby('Fecha')[selected_condition].agg(['mean', 'count']).reset_index()
-    df.rename(columns={'mean': 'Response', 'count': 'Count'}, inplace=True)
+    df = df.replace(response_mapping)
 
     # Create a new figure
     fig = go.Figure()
 
-    # Add the line trace to the figure
-    fig.add_trace(go.Scatter(
-        x=df['Fecha'],
-        y=df['Response'],
-        mode='lines+markers',
-        marker=dict(size=10),
-        name=selected_condition,
-        hovertemplate=
-        '<b>Fecha</b>: %{x}<br>' +
-        '<b>Índice</b>: %{y}<br>' +
-        '<b>Número de Informantes</b>: %{text}',
-        text=df['Count']
-    ))
+    if selected_condition == "Todas":
+        # Plot each condition as a separate line
+        for condition in ['Soleado', 'Lluvioso', 'Nublado', 'Helada']:
+            # Group the DataFrame by 'Fecha' and calculate the mean and count for each condition
+            temp_df = df.groupby('Fecha')[condition].agg(['mean', 'count']).reset_index()
+            temp_df.rename(columns={'mean': 'Response', 'count': 'Count'}, inplace=True)
+            
+            # Add the line trace to the figure for each condition
+            fig.add_trace(go.Scatter(
+                x=temp_df['Fecha'],
+                y=temp_df['Response'],
+                mode='lines+markers',
+                marker=dict(size=10),
+                name=condition,
+                hovertemplate=
+                '<b>Fecha</b>: %{x}<br>' +
+                '<b>Índice</b>: %{y}<br>' +
+                '<b>Número de Informantes</b>: %{text}',
+                text=temp_df['Count']
+            ))
+    else:
+        # Handle plotting for a single selected condition
+        df = df.groupby('Fecha')[selected_condition].agg(['mean', 'count']).reset_index()
+        df.rename(columns={'mean': 'Response', 'count': 'Count'}, inplace=True)
+        
+        # Add the line trace to the figure
+        fig.add_trace(go.Scatter(
+            x=df['Fecha'],
+            y=df['Response'],
+            mode='lines+markers',
+            marker=dict(size=10),
+            name=selected_condition,
+            hovertemplate=
+            '<b>Fecha</b>: %{x}<br>' +
+            '<b>Índice</b>: %{y}<br>' +
+            '<b>Número de Informantes</b>: %{text}',
+            text=df['Count']
+        ))
 
     # Update the layout of the figure
     fig.update_layout(
-        title=f'Condiciones Climáticas Diarias para: {selected_condition}',
+        title=f'Condiciones Climáticas Diarias para: {selected_month}/{selected_year}',
         xaxis_title='Fecha',
-        yaxis_title='Índice'
+        yaxis_title='Índice',
+        legend_title="Condición"
     )
 
     return fig
+
 
 
 
