@@ -262,9 +262,9 @@ def update_evolution_graph(selected_month, selected_year, selected_condition, _)
     for condition in ['Soleado', 'Lluvioso', 'Nublado', 'Helada']:
         df[condition] = df[condition].map(response_mapping)
 
-    # Filter the DataFrame based on the selected condition and calculate the daily average
-    df = df.groupby('Fecha')[selected_condition].mean().reset_index()
-    df.rename(columns={selected_condition: 'Response'}, inplace=True)
+    # Group the DataFrame by 'Fecha' and calculate the mean and count
+    df = df.groupby('Fecha')[selected_condition].agg(['mean', 'count']).reset_index()
+    df.rename(columns={'mean': 'Response', 'count': 'Count'}, inplace=True)
 
     # Create a new figure
     fig = go.Figure()
@@ -275,7 +275,12 @@ def update_evolution_graph(selected_month, selected_year, selected_condition, _)
         y=df['Response'],
         mode='lines+markers',
         marker=dict(size=10),
-        name=selected_condition
+        name=selected_condition,
+        hovertemplate=
+        '<b>Fecha</b>: %{x}<br>' +
+        '<b>Índice</b>: %{y}<br>' +
+        '<b>Número de Informantes</b>: %{text}',
+        text=df['Count']
     ))
 
     # Update the layout of the figure
