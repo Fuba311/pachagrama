@@ -268,24 +268,29 @@ def update_evolution_graph(selected_month, selected_year, selected_condition, _)
 
     if selected_condition == "Todas":
         # Plot each condition as a separate line
+        # Convert relevant columns to numeric, ensuring non-convertible values become NaN
         for condition in ['Soleado', 'Lluvioso', 'Nublado', 'Helada']:
-            # Group the DataFrame by 'Fecha' and calculate the mean and count for each condition
-            temp_df = df.groupby('Fecha')[condition].agg(['mean', 'count']).reset_index()
-            temp_df.rename(columns={'mean': 'Response', 'count': 'Count'}, inplace=True)
+            df[condition] = pd.to_numeric(df[condition], errors='coerce')
+
+        # Now, your aggregation should work as expected without type errors
+        if selected_condition == "Todas":
+            for condition in ['Soleado', 'Lluvioso', 'Nublado', 'Helada']:
+                temp_df = df.groupby('Fecha')[condition].agg(['mean', 'count']).reset_index()
+                temp_df.rename(columns={'mean': 'Response', 'count': 'Count'}, inplace=True)
             
-            # Add the line trace to the figure for each condition
-            fig.add_trace(go.Scatter(
-                x=temp_df['Fecha'],
-                y=temp_df['Response'],
-                mode='lines+markers',
-                marker=dict(size=10),
-                name=condition,
-                hovertemplate=
-                '<b>Fecha</b>: %{x}<br>' +
-                '<b>Índice</b>: %{y}<br>' +
-                '<b>Número de Informantes</b>: %{text}',
-                text=temp_df['Count']
-            ))
+                # Add the line trace to the figure for each condition
+                fig.add_trace(go.Scatter(
+                    x=temp_df['Fecha'],
+                    y=temp_df['Response'],
+                    mode='lines+markers',
+                    marker=dict(size=10),
+                    name=condition,
+                    hovertemplate=
+                    '<b>Fecha</b>: %{x}<br>' +
+                    '<b>Índice</b>: %{y}<br>' +
+                    '<b>Número de Informantes</b>: %{text}',
+                    text=temp_df['Count']
+                ))
     else:
         # Handle plotting for a single selected condition
         df = df.groupby('Fecha')[selected_condition].agg(['mean', 'count']).reset_index()
@@ -314,7 +319,6 @@ def update_evolution_graph(selected_month, selected_year, selected_condition, _)
     )
 
     return fig
-
 
 
 
