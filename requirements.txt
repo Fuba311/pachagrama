@@ -5,5 +5,4 @@ plotly
 sqlalchemy
 gunicorn
 dash_auth
-time
 locale
