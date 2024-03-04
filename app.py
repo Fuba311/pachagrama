@@ -290,7 +290,15 @@ def update_evolution_graph(selected_month, selected_year, selected_condition, _)
 
 
 # This might need to be adjusted according to the server's settings or environment.
-locale.setlocale(locale.LC_TIME, 'es_ES')
+try:
+    locale.setlocale(locale.LC_TIME, 'es_ES')
+except locale.Error:
+    try:
+        # Try a different locale known to be available
+        locale.setlocale(locale.LC_TIME, 'es_ES.utf8')
+    except locale.Error:
+        # Fallback to the default locale
+        locale.setlocale(locale.LC_TIME, '')
 
 
 
