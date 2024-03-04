@@ -96,7 +96,7 @@ app.layout = dbc.Container([
     ]),
     dcc.Loading(id='loading-div', children=[dcc.Graph(id='evolution-graph')]),
     html.Div(id='condition-days-table'),
-    dcc.Loading(id='loading-div', children=[dcc.Graph(id='condition-average-graph')]),
+    dcc.Loading(id='loading-div2', children=[dcc.Graph(id='condition-average-graph')]),
     html.Div(id='upload-timestamp', style={'display': 'none'}),
 ], fluid=True, style={'padding': '20px'})
 
@@ -434,7 +434,7 @@ def login(n, username, password):
 def update_condition_average_graph(selected_year):
     if selected_year is None:
         return go.Figure()  # Return an empty graph if no year is selected
-    
+
     with engine.connect() as conn:
         # Query to fetch data for the selected year
         query = f"""
@@ -443,18 +443,27 @@ def update_condition_average_graph(selected_year):
         WHERE "Año" = '{selected_year}';
         """
         df = pd.read_sql(query, conn)
-    
+
     # Map string responses to numeric values, ignoring NaNs
     response_mapping = {'Poco': 1, 'Normal': 2, 'Mucho': 3}
     for condition in ['Soleado', 'Lluvioso', 'Nublado', 'Helada']:
         df[condition] = df[condition].map(response_mapping)
-    
+
     # Compute the average for each condition per month, ignoring NaNs in the calculation
     monthly_averages = df.groupby('Mes')[['Soleado', 'Lluvioso', 'Nublado', 'Helada']].mean().reset_index()
     
+    # Dynamically set the month order based on the available data
+    full_month_order = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
+                        'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+    available_months = monthly_averages['Mes'].unique().tolist()
+    month_order = [month for month in full_month_order if month in available_months]
+    
     # Melt the dataframe to make it suitable for a bar graph with plotly
     melted_df = monthly_averages.melt(id_vars=['Mes'], var_name='Condition', value_name='Average')
-    
+
+    # Ensure the 'Mes' column in melted_df is ordered correctly based on month_order
+    melted_df['Mes'] = pd.Categorical(melted_df['Mes'], categories=month_order, ordered=True)
+
     # Generate the bar graph
     fig = px.bar(
         melted_df,
@@ -462,12 +471,13 @@ def update_condition_average_graph(selected_year):
         y='Average',
         color='Condition',
         barmode='group',
-        title=f'Promedio de Condiciones Climáticas por Mes en el Año {selected_year}'
+        title=f'Promedio de Condiciones Climáticas por Mes en el Año {selected_year}',
+        category_orders={"Mes": month_order}  # Ensures the x-axis follows the dynamic month order
     )
     
     # Improve the layout
     fig.update_layout(xaxis_title='Mes', yaxis_title='Promedio de Respuestas')
-    
+
     return fig
 
 if __name__ == '__main__':
