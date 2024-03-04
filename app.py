@@ -244,7 +244,7 @@ def update_graph(selected_month, selected_year):
 )
 def update_evolution_graph(selected_month, selected_year, selected_condition, _):
     
-# Return an empty graph if month, year, or condition is not selected
+    # Return an empty graph if month, year, or condition is not selected
     if not selected_month or not selected_year or selected_condition is None:
         return go.Figure()
 
@@ -263,43 +263,41 @@ def update_evolution_graph(selected_month, selected_year, selected_condition, _)
     response_mapping = {'Poco': 1, 'Normal': 2, 'Mucho': 3}
     df = df.replace(response_mapping)
 
+    # Convert relevant columns to numeric, ensuring non-convertible values become NaN
+    for condition in ['Soleado', 'Lluvioso', 'Nublado', 'Helada']:
+        df[condition] = pd.to_numeric(df[condition], errors='coerce')
+
     # Create a new figure
     fig = go.Figure()
 
     if selected_condition == "Todas":
         # Plot each condition as a separate line
-        # Convert relevant columns to numeric, ensuring non-convertible values become NaN
         for condition in ['Soleado', 'Lluvioso', 'Nublado', 'Helada']:
-            df[condition] = pd.to_numeric(df[condition], errors='coerce')
-
-        # Now, your aggregation should work as expected without type errors
-        if selected_condition == "Todas":
-            for condition in ['Soleado', 'Lluvioso', 'Nublado', 'Helada']:
-                temp_df = df.groupby('Fecha')[condition].agg(['mean', 'count']).reset_index()
-                temp_df.rename(columns={'mean': 'Response', 'count': 'Count'}, inplace=True)
+            temp_df = df.groupby('Fecha')[condition].agg(['mean', 'count']).reset_index()
+            temp_df.rename(columns={'mean': 'Response', 'count': 'Count'}, inplace=True)
             
-                # Add the line trace to the figure for each condition
-                fig.add_trace(go.Scatter(
-                    x=temp_df['Fecha'],
-                    y=temp_df['Response'],
-                    mode='lines+markers',
-                    marker=dict(size=10),
-                    name=condition,
-                    hovertemplate=
-                    '<b>Fecha</b>: %{x}<br>' +
-                    '<b>Índice</b>: %{y}<br>' +
-                    '<b>Número de Informantes</b>: %{text}',
-                    text=temp_df['Count']
-                ))
+            # Add the line trace to the figure for each condition
+            fig.add_trace(go.Scatter(
+                x=temp_df['Fecha'],
+                y=temp_df['Response'],
+                mode='lines+markers',
+                marker=dict(size=10),
+                name=condition,
+                hovertemplate=
+                '<b>Fecha</b>: %{x}<br>' +
+                '<b>Índice</b>: %{y}<br>' +
+                '<b>Número de Informantes</b>: %{text}',
+                text=temp_df['Count']
+            ))
     else:
         # Handle plotting for a single selected condition
-        df = df.groupby('Fecha')[selected_condition].agg(['mean', 'count']).reset_index()
-        df.rename(columns={'mean': 'Response', 'count': 'Count'}, inplace=True)
+        temp_df = df.groupby('Fecha')[selected_condition].agg(['mean', 'count']).reset_index()
+        temp_df.rename(columns={'mean': 'Response', 'count': 'Count'}, inplace=True)
         
-        # Add the line trace to the figure
+        # Add the line trace to the figure for the selected condition
         fig.add_trace(go.Scatter(
-            x=df['Fecha'],
-            y=df['Response'],
+            x=temp_df['Fecha'],
+            y=temp_df['Response'],
             mode='lines+markers',
             marker=dict(size=10),
             name=selected_condition,
@@ -307,7 +305,7 @@ def update_evolution_graph(selected_month, selected_year, selected_condition, _)
             '<b>Fecha</b>: %{x}<br>' +
             '<b>Índice</b>: %{y}<br>' +
             '<b>Número de Informantes</b>: %{text}',
-            text=df['Count']
+            text=temp_df['Count']
         ))
 
     # Update the layout of the figure
