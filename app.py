@@ -203,35 +203,50 @@ def update_month_dropdown(selected_year):
 @app.callback(
     Output('weather-condition-frequency', 'children'),
     [Input('month-dropdown', 'value'),
-     Input('year-dropdown', 'value')]
+     Input('year-dropdown', 'value'),
+     Input('upload-timestamp', 'children')]
 )
-def update_graph(selected_month, selected_year):
+def update_graph(selected_month, selected_year, _):
     if not selected_month or not selected_year:
         return html.Div("Seleccione un mes y un año para ver los gráficos.", style={'margin-top': '20px'})
     
     with engine.connect() as conn:
         query = f"""
-        SELECT "Soleado", "Granizada", "Lluvioso", "Nublado", "Helada"
+        SELECT "Fecha", "Soleado", "Lluvioso", "Nublado", "Helada"
         FROM table_clima4
         WHERE "Mes" = '{selected_month}' AND "Año" = '{selected_year}';
         """
         df = pd.read_sql(query, conn)
 
+    # Replace None with pd.NA (pandas NA)
     df = df.replace({None: pd.NA})
     
-    responses = ['Poco', 'Normal', 'Mucho']
-    conditions = ['Soleado', 'Granizada', 'Lluvioso', 'Nublado', 'Helada']
+    # Function to determine the majority vote for each day
+    def majority_vote(s):
+        if s.dropna().empty:
+            return pd.NA
+        return s.mode()[0] if not s.mode().empty else pd.NA
+
+    # Calculate the majority response for each condition per day
+    majority_responses = df.groupby('Fecha').agg({condition: majority_vote for condition in ['Soleado', 'Lluvioso', 'Nublado', 'Helada']})
+    
     plot_data = []
 
-    for condition in conditions:
-        condition_data = df[condition].dropna().value_counts().reindex(responses, fill_value=0).reset_index()
-        condition_data.columns = ['Response', 'Frequency']
+    for condition in ['Soleado', 'Lluvioso', 'Nublado', 'Helada']:
+        condition_data = majority_responses[condition].value_counts().reset_index()
+        condition_data.columns = ['Response', 'Days']
         condition_data['Condition'] = condition
         plot_data.append(condition_data)
     
     plot_df = pd.concat(plot_data, ignore_index=True)
-    fig = px.bar(plot_df, x='Condition', y='Frequency', color='Response', barmode='group', title=f"Frecuencia de Condiciones Climáticas para {selected_month}")
 
+    # Explicitly filter out 'nan' strings from the 'Response' column
+    plot_df = plot_df[plot_df['Response'].astype(str).str.lower() != 'nan']
+
+    fig = px.bar(plot_df, x='Condition', y='Days', color='Response', barmode='group', 
+                 title=f"Días por Condición Climática para {selected_month}/{selected_year}",
+                 labels={"Days": "Número de Días", "Condition": "Condición Climática", "Response": "Respuesta Mayoritaria"})
+    
     return dcc.Graph(figure=fig)
 
 
@@ -453,10 +468,11 @@ def login(n, username, password):
     return False
 
 @app.callback(
-    Output('condition-average-graph', 'figure'),  # You'll need to add a dcc.Graph with this ID in your layout
-    [Input('year-dropdown', 'value')]
+    Output('condition-average-graph', 'figure'), 
+    [Input('year-dropdown', 'value'),
+     Input('upload-timestamp', 'children')]
 )
-def update_condition_average_graph(selected_year):
+def update_condition_average_graph(selected_year, _):
     if selected_year is None:
         return go.Figure()  # Return an empty graph if no year is selected
 
