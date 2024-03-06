@@ -33,7 +33,6 @@ condition_dropdown = dcc.Dropdown(
 
 
 
-
 # Layout setup
 app.layout = dbc.Container([
     dbc.Row(dbc.Col(html.H1("Visualizador de Observaciones Climáticas", 
@@ -44,6 +43,11 @@ app.layout = dbc.Container([
                                     'fontWeight': 'bold'}),
                              className="mb-4")),
     dcc.Store(id='login-state', data=False), 
+    dbc.Row(dbc.Col(dcc.Dropdown(
+    id='comunidad-dropdown',
+    placeholder="Seleccione una comunidad",
+    style={'width': '100%'}
+    )), className="mb-3"),
     dbc.Row(dbc.Col(dcc.Dropdown(
     id='year-dropdown',
     placeholder="Seleccione un año",
@@ -122,6 +126,7 @@ def handle_file_upload(contents, filename):
 
         # Rename columns as specified
         df.rename(columns={
+            'Indique su comunidad': 'Comunidad',
             'Indique el mes del registro': 'Mes',
             'Indique_el_estado_de_empo_y_su_intensidad/Soleado': 'Soleado',
             'Indique_el_estado_de_empo_y_su_intensidad/Granizada': 'Granizada',
@@ -134,87 +139,110 @@ def handle_file_upload(contents, filename):
 
         # Ensure the 'Fecha' column is in the correct date format
         df['Fecha'] = pd.to_datetime(df['Fecha'], format='%Y-%m-%d')
+        
 
         # Convert all relevant columns to string to ensure TEXT data type in SQL
-        text_columns = ['Año', 'Mes', 'Soleado', 'Granizada', 'Lluvioso', 'Nublado', 'Helada', 'ID']
+        text_columns = ['Comunidad', 'Año', 'Mes', 'Soleado', 'Granizada', 'Lluvioso', 'Nublado', 'Helada', 'ID']
         for col in text_columns:
             df[col] = df[col].astype(str)
         
         # Filter the DataFrame to include relevant columns
-        relevant_columns = ['Año', 'Mes', 'Soleado', 'Granizada', 'Lluvioso', 'Nublado', 'Helada', 'Fecha', 'ID']
+        relevant_columns = ['Comunidad', 'Año', 'Mes', 'Soleado', 'Granizada', 'Lluvioso', 'Nublado', 'Helada', 'Fecha', 'ID']
         df_filtered = df[relevant_columns]
 
         # Use inspect to check if the table exists in the database
         inspector = inspect(engine)
-        table_exists = inspector.has_table('table_clima4')
+        table_exists = inspector.has_table('table_clima5')
 
         if table_exists:
-            existing_ids = pd.read_sql_table('table_clima4', engine, columns=['ID'])['ID'].tolist()
+            existing_ids = pd.read_sql_table('table_clima5', engine, columns=['ID'])['ID'].tolist()
             df_filtered = df_filtered[~df_filtered['ID'].isin(existing_ids)]
 
         if not df_filtered.empty:
-            df_filtered.to_sql('table_clima4', engine, if_exists='append', index=False)
+            df_filtered.to_sql('table_clima5', engine, if_exists='append', index=False)
             upload_timestamp = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
             return html.Div(f"El archivo {filename} se ha subido correctamente."), upload_timestamp
         else:
             return html.Div(f"No se encontraron registros nuevos en el archivo {filename} para agregar."), ""
     return html.Div("Si desea subir un archivo, debe ingresar usuario y contraseña."), ""
 
+
+@app.callback(
+    Output('comunidad-dropdown', 'options'),
+    Input('upload-timestamp', 'children') 
+)
+def update_comunidad_dropdown(_):
+    with engine.connect() as conn:
+        # Ensure column names are case-sensitive by using double quotes if the actual column name in the database is mixed-case.
+        # Adjust "Comunidad" to match the exact case used in your database table.
+        df = pd.read_sql('SELECT DISTINCT "Comunidad" FROM table_clima5 ORDER BY "Comunidad"', conn)
+    options = [{'label': comunidad, 'value': comunidad} for comunidad in df['Comunidad'].dropna().tolist()]
+    return options
+
+
+
 @app.callback(
     Output('year-dropdown', 'options'),
-    Input('upload-timestamp', 'children')  # Triggered after a file upload or any action that updates the timestamp
+    [Input('comunidad-dropdown', 'value'),  # New input
+     Input('upload-timestamp', 'children')]
 )
-def update_year_dropdown(_):
-    with engine.connect() as conn:
-        query = "SELECT DISTINCT \"Año\" FROM table_clima4 WHERE \"Año\" IS NOT NULL ORDER BY \"Año\""
-        df = pd.read_sql(query, conn)
+def update_year_dropdown(selected_comunidad, _):
+    if selected_comunidad:
+        with engine.connect() as conn:
+            query = f"""
+            SELECT DISTINCT "Año" FROM table_clima5
+            WHERE "Comunidad" = '{selected_comunidad}'
+            ORDER BY "Año";
+            """
+            df = pd.read_sql(query, conn)
+    else:
+        df = pd.DataFrame(columns=['Año'])  # Fallback to an empty DataFrame if no community is selected
     
-    valid_years = df['Año'].dropna().unique().tolist()
-    
-    options = [{'label': int(year), 'value': int(year)} for year in valid_years if year is not None]
-    
+    options = [{'label': int(year), 'value': int(year)} for year in df['Año'].dropna().unique().tolist()]
     return options
 
 
 @app.callback(
     Output('month-dropdown', 'options'),
-    [Input('year-dropdown', 'value')]
+    [Input('comunidad-dropdown', 'value'),  # New input for community
+     Input('year-dropdown', 'value')]
 )
-def update_month_dropdown(selected_year):
-    if selected_year is not None:
+def update_month_dropdown(selected_comunidad, selected_year):
+    if selected_year is not None and selected_comunidad is not None:
         with engine.connect() as conn:
             query = f"""
             SELECT DISTINCT "Mes" 
-            FROM table_clima4 
-            WHERE "Año" = '{selected_year}' 
+            FROM table_clima5 
+            WHERE "Año" = '{selected_year}' AND "Comunidad" = '{selected_comunidad}'
             ORDER BY "Mes";
             """
             df = pd.read_sql(query, conn)
         
         valid_months = df['Mes'].dropna().unique().tolist()
-        
         options = [{'label': month, 'value': month} for month in valid_months if month is not None]
     else:
         options = []
-    
+
     return options
+
 
 
 @app.callback(
     Output('weather-condition-frequency', 'children'),
     [Input('month-dropdown', 'value'),
      Input('year-dropdown', 'value'),
+     Input('comunidad-dropdown', 'value'),  # Included comunidad-dropdown as a new input
      Input('upload-timestamp', 'children')]
 )
-def update_graph(selected_month, selected_year, _):
-    if not selected_month or not selected_year:
-        return html.Div("Seleccione un mes y un año para ver los gráficos.", style={'margin-top': '20px'})
+def update_graph(selected_month, selected_year, selected_comunidad, _):
+    if not selected_month or not selected_year or not selected_comunidad:  # Check if comunidad is also selected
+        return html.Div("Seleccione una comunidad, un mes y un año para ver los gráficos.", style={'margin-top': '20px'})
     
     with engine.connect() as conn:
         query = f"""
         SELECT "Fecha", "Soleado", "Lluvioso", "Nublado", "Helada"
-        FROM table_clima4
-        WHERE "Mes" = '{selected_month}' AND "Año" = '{selected_year}';
+        FROM table_clima5  
+        WHERE "Mes" = '{selected_month}' AND "Año" = '{selected_year}' AND "Comunidad" = '{selected_comunidad}';
         """
         df = pd.read_sql(query, conn)
 
@@ -250,26 +278,29 @@ def update_graph(selected_month, selected_year, _):
     return dcc.Graph(figure=fig)
 
 
+
+from pandas import to_numeric
+
+
 @app.callback(
     Output('evolution-graph', 'figure'),
-    [Input('month-dropdown', 'value'),
+    [Input('comunidad-dropdown', 'value'),  # Add comunidad-dropdown as an input
+     Input('month-dropdown', 'value'),
      Input('year-dropdown', 'value'),
      Input('condition-dropdown', 'value'), 
      Input('upload-timestamp', 'children')]
 )
-def update_evolution_graph(selected_month, selected_year, selected_condition, _):
-    
+def update_evolution_graph(selected_comunidad, selected_month, selected_year, selected_condition, _):
     # Return an empty graph if month, year, or condition is not selected
-    if not selected_month or not selected_year or selected_condition is None:
+    if not selected_comunidad or not selected_month or not selected_year or selected_condition is None:
         return go.Figure()
 
-    # Connect to the database and execute the query
     with engine.connect() as conn:
         query = f"""
         SELECT "Fecha", "Soleado", "Lluvioso", "Nublado", "Helada"
-        FROM table_clima4
-        WHERE "Mes" = '{selected_month}' AND "Año" = '{selected_year}'
-        ORDER BY "Fecha" ASC
+        FROM table_clima5  
+        WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}'
+        ORDER BY "Fecha" ASC;
         """
         df = pd.read_sql(query, conn)
     
@@ -333,36 +364,27 @@ def update_evolution_graph(selected_month, selected_year, selected_condition, _)
 
     return fig
 
-
-
 # This might need to be adjusted according to the server's settings or environment.
-try:
-    locale.setlocale(locale.LC_TIME, 'es_ES')
-except locale.Error:
-    try:
-        # Try a different locale known to be available
-        locale.setlocale(locale.LC_TIME, 'es_ES.utf8')
-    except locale.Error:
-        # Fallback to the default locale
-        locale.setlocale(locale.LC_TIME, '')
+locale.setlocale(locale.LC_TIME, 'es_ES')
 
 
 
 @app.callback(
     Output('condition-days-table', 'children'),
-    [Input('month-dropdown', 'value'),
-     Input('year-dropdown', 'value'),  # Nuevo input para el año seleccionado
+    [Input('comunidad-dropdown', 'value'),  # Add comunidad-dropdown as an input
+     Input('month-dropdown', 'value'),
+     Input('year-dropdown', 'value'),  
      Input('upload-timestamp', 'children')]
 )
-def update_condition_days(selected_month, selected_year, _):
-    if not selected_month or not selected_year:
+def update_condition_days(selected_comunidad, selected_month, selected_year, _):
+    if not selected_comunidad or not selected_month or not selected_year:
         return ""
     
     with engine.connect() as conn:
         query = f"""
         SELECT "Fecha", "Soleado", "Lluvioso", "Nublado", "Helada"
-        FROM table_clima4
-        WHERE "Mes" = '{selected_month}' AND "Año" = '{selected_year}'
+        FROM table_clima5  
+        WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}'
         """
         df = pd.read_sql(query, conn)
 
@@ -468,20 +490,21 @@ def login(n, username, password):
     return False
 
 @app.callback(
-    Output('condition-average-graph', 'figure'), 
-    [Input('year-dropdown', 'value'),
+    Output('condition-average-graph', 'figure'),  # Ensure you have added a dcc.Graph with this ID in your layout
+    [Input('comunidad-dropdown', 'value'),  # Add comunidad-dropdown as an input
+     Input('year-dropdown', 'value'),
      Input('upload-timestamp', 'children')]
 )
-def update_condition_average_graph(selected_year, _):
-    if selected_year is None:
-        return go.Figure()  # Return an empty graph if no year is selected
+def update_condition_average_graph(selected_comunidad, selected_year, _):
+    if selected_year is None or selected_comunidad is None:
+        return go.Figure()  # Return an empty graph if no year or community is selected
 
     with engine.connect() as conn:
-        # Query to fetch data for the selected year
+        # Update query to fetch data for the selected year and community
         query = f"""
         SELECT "Mes", "Soleado", "Lluvioso", "Nublado", "Helada"
-        FROM table_clima4
-        WHERE "Año" = '{selected_year}';
+        FROM table_clima5 
+        WHERE "Año" = '{selected_year}' AND "Comunidad" = '{selected_comunidad}';
         """
         df = pd.read_sql(query, conn)
 
@@ -516,11 +539,16 @@ def update_condition_average_graph(selected_year, _):
         category_orders={"Mes": month_order}  # Ensures the x-axis follows the dynamic month order
     )
     
-    # Improve the layout
-    fig.update_layout(xaxis_title='Mes', yaxis_title='Promedio de Respuestas')
+    # Adjust the title to reflect the inclusion of the selected community
+    fig.update_layout(
+        title=f'Promedio de Condiciones Climáticas por Mes para {selected_comunidad} en el Año {selected_year}',
+        xaxis_title='Mes',
+        yaxis_title='Promedio de Respuestas'
+    )
 
     return fig
 
 if __name__ == '__main__':
     app.run_server(debug=True)
+
 
