@@ -364,8 +364,8 @@ def update_evolution_graph(selected_comunidad, selected_month, selected_year, se
 
     return fig
 
-# This might need to be adjusted according to the server's settings or environment.
-locale.setlocale(locale.LC_TIME, 'es_ES')
+# Set locale to English (United States)
+locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
 
 
 
