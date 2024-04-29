@@ -72,7 +72,6 @@ app.layout = dbc.Container([
         dcc.Loading(id='loading-div3', children=[html.Div(id='condition-days-table')]),
         dcc.Loading(id='loading-div4', children=[html.Div(id='weather-condition-frequency')])
     ]),
-    dcc.Loading(id='loading-div5', children=[dcc.Graph(id='lunar-phase-graph')]),
     html.Div(id='maiz-risks-table'),
     html.Div(id='frijol-risks-table'),
     dcc.Graph(
@@ -1213,61 +1212,7 @@ def toggle_visibility(show_labors):
         return {'display': 'none'}
     else:
         return {'display': 'block'}
-    
-@app.callback(
-    Output('lunar-phase-graph', 'figure'),
-    [Input('comunidad-dropdown', 'value'),
-     Input('month-dropdown', 'value'),
-     Input('year-dropdown', 'value'),
-     Input('upload-timestamp', 'children')]
-)
-def update_lunar_phase_graph(selected_comunidad, selected_month, selected_year, _):
-    if not selected_comunidad or not selected_month or not selected_year:
-        return go.Figure()
 
-    with engine.connect() as conn:
-        query = f"""
-        SELECT "Fecha", "Fase lunar"
-        FROM table_clima22
-        WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}'
-        ORDER BY "Fecha" ASC;
-        """
-        df = pd.read_sql(query, conn)
-
-    df['Fecha'] = pd.to_datetime(df['Fecha'])
-
-    # Function to determine the majority vote for each day
-    def majority_vote(s):
-        return s.mode()[0] if not s.mode().empty else pd.NA
-
-    # Calculate the majority response for each lunar phase per day
-    majority_responses = df.groupby('Fecha')['Fase lunar'].agg(majority_vote).reset_index()
-
-    fig = go.Figure(data=go.Scatter(
-        x=majority_responses['Fecha'],
-        y=majority_responses['Fase lunar'],
-        mode='lines+markers',
-        line=dict(width=6, color='#1f77b4'),  # Increase line width and set color
-        marker=dict(size=16, color='#1f77b4'),  # Increase marker size and set color
-        name='Fase lunar',
-        hovertemplate=
-        '<b>Fecha</b>: %{x}<br>' +
-        '<b>Fase Lunar</b>: %{y}'
-    ))
-
-    fig.update_layout(
-        title=f'Fases Lunares para {selected_comunidad} - {selected_month}/{selected_year}',
-        xaxis_title='Fecha',
-        yaxis_title='Fase Lunar',
-        yaxis=dict(
-            categoryorder='array',
-            categoryarray=['Luna nueva', 'Cuarto creciente', 'Luna llena', 'Cuarto menguante']
-        ),
-        margin=dict(l=60, r=20, t=80, b=40),  # Adjust margins for a tighter plot
-        height=300  # Set a fixed height for the plot
-    )
-
-    return fig
 
 @app.callback(
     Output('maiz-status-graph', 'figure'),
