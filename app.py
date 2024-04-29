@@ -83,7 +83,6 @@ app.layout = dbc.Container([
     id='frijol-status-graph',
     style={'display': 'none'}  # Start as invisible
     ),
-    html.Div(id='crop-discrepancies-table'),
     html.Div(id='climate-discrepancies-table'),
     html.Div(id='upload-timestamp', style={'display': 'none'}),
     html.Div([
