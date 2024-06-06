@@ -203,7 +203,10 @@ def handle_file_upload(contents, filename):
         }, inplace=True)
 
         # Ensure the 'Fecha' column is in the correct date format
-        df['Fecha'] = pd.to_datetime(df['Fecha'], format='%Y-%m-%d')
+        df['Fecha'] = pd.to_datetime(df['Fecha'], format='%m/%d/%Y %I:%M:%S %p')
+        
+        # Extract only the date part (day, month, year)
+        df['Fecha'] = df['Fecha'].dt.date
 
        
         # Merge the informant columns into a single "Informante" column
