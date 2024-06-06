@@ -205,8 +205,11 @@ def handle_file_upload(contents, filename):
         # Ensure the 'Fecha' column is in the correct date format
         df['Fecha'] = pd.to_datetime(df['Fecha'], format='%m/%d/%Y %I:%M:%S %p')
         
-        # Extract only the date part (day, month, year)
-        df['Fecha'] = df['Fecha'].dt.date
+        # Extract only the date part (year, month, day) and convert it to the desired format
+        df['Fecha'] = df['Fecha'].dt.strftime('%Y-%m-%d')
+        
+        # Extract the year from the 'Fecha' column and convert it to string
+        df['Año'] = df['Fecha'].str[:4]
 
        
         # Merge the informant columns into a single "Informante" column
@@ -214,9 +217,6 @@ def handle_file_upload(contents, filename):
 
         # Drop the original informant columns
         df.drop(columns=name_columns, inplace=True)
-
-        # Extract 'Año' from 'Fecha' column
-        df['Año'] = df['Fecha'].dt.year.astype(str)
 
         # Convert all relevant columns to string to ensure TEXT data type in SQL
         text_columns = ['Comunidad', 'Año', 'Mes', 'Soleado', 'Granizada', 'Lluvioso', 'Nublado', 'Helada', 'ID',
