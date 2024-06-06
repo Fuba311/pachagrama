@@ -605,17 +605,22 @@ def update_evolution_graph(selected_comunidad, selected_month, selected_year, _,
         if show_labors:
             # Group the maize data by date and labor to get the informants for each point
             maize_data_grouped = maize_data.groupby(['Fecha', 'Labor'])['Informante'].apply(list).reset_index()
+            if maize_data_grouped.empty:
+                maize_data_grouped['Num_Informantes'] = 0
             maize_data_grouped['Informantes'] = maize_data_grouped['Informante'].apply(lambda x: ', '.join(x))
             maize_data_grouped['Num_Informantes'] = maize_data_grouped['Informante'].apply(len)
+
+            max_informantes = max(maize_data_grouped['Num_Informantes'])
+            marker_size = maize_data_grouped['Num_Informantes'] * 5 if max_informantes > 0 else 10
 
             fig.add_trace(go.Scatter(
                 x=maize_data_grouped['Fecha'],
                 y=maize_data_grouped['Labor'],
                 mode='markers',
                 marker=dict(
-                    size=maize_data_grouped['Num_Informantes'] * 5,  # Adjust the size based on the number of informants
+                    size=marker_size,
                     sizemode='area',
-                    sizeref=2. * max(maize_data_grouped['Num_Informantes']) / (20. ** 2),
+                    sizeref=2. * max(maize_data_grouped['Num_Informantes']) / (20. ** 2) if max_informantes > 0 else 1,
                     sizemin=4
                 ),
                 name='Labores Maíz',
@@ -680,17 +685,23 @@ def update_evolution_graph(selected_comunidad, selected_month, selected_year, _,
 
             # Group the beans data by date and labor to get the informants for each point
             beans_data_grouped = beans_data.groupby(['Fecha', 'Labor'])['Informante'].apply(list).reset_index()
+            if beans_data_grouped.empty:
+                beans_data_grouped['Num_Informantes'] = 0
             beans_data_grouped['Informantes'] = beans_data_grouped['Informante'].apply(lambda x: ', '.join(x))
             beans_data_grouped['Num_Informantes'] = beans_data_grouped['Informante'].apply(len)
+
+            max_informantes2 = max(beans_data_grouped['Num_Informantes'])
+            marker_size2 = beans_data_grouped['Num_Informantes'] * 5 if max_informantes2 > 0 else 10
+            
 
             fig.add_trace(go.Scatter(
                 x=beans_data_grouped['Fecha'],
                 y=beans_data_grouped['Labor'],
                 mode='markers',
                 marker=dict(
-                    size=beans_data_grouped['Num_Informantes'] * 5,  # Adjust the size based on the number of informants
+                    size=marker_size2,
                     sizemode='area',
-                    sizeref=2. * max(beans_data_grouped['Num_Informantes']) / (20. ** 2),
+                    sizeref=2. * max(beans_data_grouped['Num_Informantes']) / (20. ** 2) if max_informantes2 > 0 else 1,
                     sizemin=4
                 ),
                 name='Labores Frijol',
