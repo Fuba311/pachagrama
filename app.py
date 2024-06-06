@@ -27,7 +27,7 @@ informant_dropdown = dcc.Dropdown(
 )
 
 # Database connection setup
-DATABASE_URL = "postgresql://cesder_user:GEtjvJf0VGG8mpa4AU7PF74eMEXef3q4@dpg-cnfn9q6g1b2c73bakt30-a.oregon-postgres.render.com/cesder"
+DATABASE_URL = "postgresql://cesder_test_user:ZwbedV3sXoo341YlPdH9cVhfUWQ1XfFL@dpg-cpgq9qe3e1ms73akq05g-a.oregon-postgres.render.com/cesder_test"
 engine = create_engine(DATABASE_URL)
 
 
