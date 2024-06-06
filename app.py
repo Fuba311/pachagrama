@@ -610,8 +610,12 @@ def update_evolution_graph(selected_comunidad, selected_month, selected_year, _,
             maize_data_grouped['Informantes'] = maize_data_grouped['Informante'].apply(lambda x: ', '.join(x))
             maize_data_grouped['Num_Informantes'] = maize_data_grouped['Informante'].apply(len)
 
-            max_informantes = max(maize_data_grouped['Num_Informantes'])
-            marker_size = maize_data_grouped['Num_Informantes'] * 5 if max_informantes > 0 else 10
+            if not maize_data_grouped.empty:
+                max_informantes = max(maize_data_grouped['Num_Informantes'])
+                marker_size = maize_data_grouped['Num_Informantes'] * 5 if max_informantes > 0 else 10
+            else:
+                max_informantes = 0
+                marker_size = 10
 
             fig.add_trace(go.Scatter(
                 x=maize_data_grouped['Fecha'],
@@ -690,8 +694,12 @@ def update_evolution_graph(selected_comunidad, selected_month, selected_year, _,
             beans_data_grouped['Informantes'] = beans_data_grouped['Informante'].apply(lambda x: ', '.join(x))
             beans_data_grouped['Num_Informantes'] = beans_data_grouped['Informante'].apply(len)
 
-            max_informantes2 = max(beans_data_grouped['Num_Informantes'])
-            marker_size2 = beans_data_grouped['Num_Informantes'] * 5 if max_informantes2 > 0 else 10
+            if not beans_data_grouped.empty:
+                max_informantes2 = max(beans_data_grouped['Num_Informantes'])
+                marker_size2 = beans_data_grouped['Num_Informantes'] * 5 if max_informantes2 > 0 else 10
+            else:
+                max_informantes2 = 0
+                marker_size2 = 10
             
 
             fig.add_trace(go.Scatter(
