@@ -203,20 +203,23 @@ def handle_file_upload(contents, filename):
             '_id': 'ID',
         }, inplace=True)
 
-        # Ensure 'Fecha' column is in the correct date format
-        df['Fecha3'] = pd.to_datetime(df['Fecha'], format='%m/%d/%Y %I:%M:%S %p')
+                # Convert 'Fecha3' to datetime format (YYYY-MM-DD)
+        df['Fecha3'] = pd.to_datetime(df['Fecha3'], format='%m/%d/%Y %I:%M:%S %p')
         
-        # Convert 'Fecha' to just date format (YYYY-MM-DD)
-        df['Fecha3'] = df['Fecha'].dt.strftime('%Y-%m-%d')
-        
-        # Convert 'Fecha2' to the correct date format
+        # Convert 'Fecha2' to datetime format (YYYY-MM-DD) and handle missing values
         df['Fecha2'] = pd.to_datetime(df['Fecha2'], format='%m/%d/%Y', errors='coerce')
         
-        # Use 'Fecha2' if available, otherwise use 'Fecha'
+        # Extract only the date part (year, month, day) from 'Fecha3'
+        df['Fecha3'] = df['Fecha3'].dt.strftime('%Y-%m-%d')
+        
+        # Create 'Fecha' column using 'Fecha2' if available, otherwise use 'Fecha3'
         df['Fecha'] = df['Fecha2'].fillna(df['Fecha3'])
         
-        # Extract the year from the 'Fecha_final' column
-        df['Año'] = df['Fecha'].dt.strftime('%Y')
+        # Convert 'Fecha' back to datetime to extract the year
+        df['Fecha'] = pd.to_datetime(df['Fecha'], format='%Y-%m-%d')
+        
+        # Extract the year from the 'Fecha' column
+        df['Año'] = df['Fecha'].dt.year
 
        
         # Merge the informant columns into a single "Informante" column
