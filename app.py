@@ -198,18 +198,25 @@ def handle_file_upload(contents, filename):
             'Debido a cuál o cuáles de los siguientes riesgos le fue mal en su producción/Golpe de calor': 'Riesgo golpe de calor-producción',
             'Debido a cuál o cuáles de los siguientes riesgos le fue mal en su producción/Inundación': 'Riesgo inundación-producción',
             'Debido a cuál o cuáles de los siguientes riesgos le fue mal en su producción/Plagas y enfermedades': 'Riesgo plagas y enfermedades-producción',
-            '_submission_time': 'Fecha', 
+            '_submission_time': 'Fecha3', 
+            'Indique la fecha del registro': 'Fecha2',
             '_id': 'ID',
         }, inplace=True)
 
-        # Ensure the 'Fecha' column is in the correct date format
-        df['Fecha'] = pd.to_datetime(df['Fecha'], format='%m/%d/%Y %I:%M:%S %p')
+        # Ensure 'Fecha' column is in the correct date format
+        df['Fecha3'] = pd.to_datetime(df['Fecha'], format='%m/%d/%Y %I:%M:%S %p')
         
-        # Extract only the date part (year, month, day) and convert it to the desired format
-        df['Fecha'] = df['Fecha'].dt.strftime('%Y-%m-%d')
+        # Convert 'Fecha' to just date format (YYYY-MM-DD)
+        df['Fecha3'] = df['Fecha'].dt.strftime('%Y-%m-%d')
         
-        # Extract the year from the 'Fecha' column and convert it to string
-        df['Año'] = df['Fecha'].str[:4]
+        # Convert 'Fecha2' to the correct date format
+        df['Fecha2'] = pd.to_datetime(df['Fecha2'], format='%m/%d/%Y', errors='coerce')
+        
+        # Use 'Fecha2' if available, otherwise use 'Fecha'
+        df['Fecha'] = df['Fecha2'].fillna(df['Fecha3'])
+        
+        # Extract the year from the 'Fecha_final' column
+        df['Año'] = df['Fecha'].dt.strftime('%Y')
 
        
         # Merge the informant columns into a single "Informante" column
@@ -231,14 +238,14 @@ def handle_file_upload(contents, filename):
 
         # Use inspect to check if the table exists in the database
         inspector = inspect(engine)
-        table_exists = inspector.has_table('table_clima24')
+        table_exists = inspector.has_table('table_clima25')
 
         if table_exists:
-            existing_ids = pd.read_sql_table('table_clima24', engine, columns=['ID'])['ID'].tolist()
+            existing_ids = pd.read_sql_table('table_clima25', engine, columns=['ID'])['ID'].tolist()
             df = df[~df['ID'].isin(existing_ids)]
 
         if not df.empty:
-            df.to_sql('table_clima24', engine, if_exists='append', index=False)
+            df.to_sql('table_clima25', engine, if_exists='append', index=False)
             upload_timestamp = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
             return html.Div(f"El archivo {filename} se ha subido correctamente."), upload_timestamp
         else:
@@ -253,7 +260,7 @@ def update_comunidad_dropdown(_):
     with engine.connect() as conn:
         # Ensure column names are case-sensitive by using double quotes if the actual column name in the database is mixed-case.
         # Adjust "Comunidad" to match the exact case used in your database table.
-        df = pd.read_sql('SELECT DISTINCT "Comunidad" FROM table_clima24 ORDER BY "Comunidad"', conn)
+        df = pd.read_sql('SELECT DISTINCT "Comunidad" FROM table_clima25 ORDER BY "Comunidad"', conn)
     options = [{'label': comunidad, 'value': comunidad} for comunidad in df['Comunidad'].dropna().tolist()]
     return options
 
@@ -268,7 +275,7 @@ def update_year_dropdown(selected_comunidad, _):
     if selected_comunidad:
         with engine.connect() as conn:
             query = f"""
-            SELECT DISTINCT "Año" FROM table_clima24
+            SELECT DISTINCT "Año" FROM table_clima25
             WHERE "Comunidad" = '{selected_comunidad}'
             ORDER BY "Año";
             """
@@ -290,7 +297,7 @@ def update_month_dropdown(selected_comunidad, selected_year):
         with engine.connect() as conn:
             query = f"""
             SELECT DISTINCT "Mes" 
-            FROM table_clima24 
+            FROM table_clima25 
             WHERE "Año" = '{selected_year}' AND "Comunidad" = '{selected_comunidad}'
             ORDER BY "Mes";
             """
@@ -315,7 +322,7 @@ def update_informant_dropdown(selected_comunidad, selected_year, selected_month,
     if selected_comunidad and selected_year and selected_month:
         with engine.connect() as conn:
             query = f"""
-            SELECT DISTINCT "Informante" FROM table_clima24
+            SELECT DISTINCT "Informante" FROM table_clima25
             WHERE "Comunidad" = '{selected_comunidad}' AND "Año" = '{selected_year}' AND "Mes" = '{selected_month}'
             ORDER BY "Informante";
             """
@@ -339,13 +346,13 @@ def update_graph(selected_month, selected_year, selected_comunidad, _, selected_
         if selected_informant == 'Todos':
             query = f"""
             SELECT "Fecha", "Informante", "Soleado", "Lluvioso", "Nublado", "Helada", "Granizada"
-            FROM table_clima24
+            FROM table_clima25
             WHERE "Mes" = '{selected_month}' AND "Año" = '{selected_year}' AND "Comunidad" = '{selected_comunidad}';
             """
         else:
             query = f"""
             SELECT "Fecha", "Informante", "Soleado", "Lluvioso", "Nublado", "Helada", "Granizada"
-            FROM table_clima24
+            FROM table_clima25
             WHERE "Mes" = '{selected_month}' AND "Año" = '{selected_year}' AND "Comunidad" = '{selected_comunidad}' AND "Informante" = '{selected_informant}';
             """
         df = pd.read_sql(query, conn)
@@ -412,14 +419,14 @@ def update_evolution_graph(selected_comunidad, selected_month, selected_year, _,
         if selected_informant == 'Todos':
             query = f"""
             SELECT "Fecha", "Soleado", "Lluvioso", "Nublado"
-            FROM table_clima24
+            FROM table_clima25
             WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}'
             ORDER BY "Fecha" ASC;
             """
         else:
             query = f"""
             SELECT "Fecha", "Soleado", "Lluvioso", "Nublado"
-            FROM table_clima24
+            FROM table_clima25
             WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}' AND "Informante" = '{selected_informant}'
             ORDER BY "Fecha" ASC;
             """
@@ -498,7 +505,7 @@ def update_evolution_graph(selected_comunidad, selected_month, selected_year, _,
         # Get the total number of unique informants for the selected community
         total_informants_query = f"""
         SELECT COUNT(DISTINCT "Informante") as total_informants
-        FROM table_clima24
+        FROM table_clima25
         WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}';
         """
         total_informants = pd.read_sql(total_informants_query, conn).iloc[0]['total_informants']
@@ -546,14 +553,14 @@ def update_evolution_graph(selected_comunidad, selected_month, selected_year, _,
         if selected_informant == 'Todos':
             maize_df = pd.read_sql_query(f"""
                 SELECT "Fecha", "Informante", "Labranza-maíz", "Fertilización-maíz", "Siembra-maíz", "Aterrada-maíz", "Despunte-maíz", "Cosecha-maíz"
-                FROM table_clima24
+                FROM table_clima25
                 WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}'
                 ORDER BY "Fecha" ASC;
             """, conn)
         else:
             maize_df = pd.read_sql_query(f"""
                 SELECT "Fecha", "Informante", "Labranza-maíz", "Fertilización-maíz", "Siembra-maíz", "Aterrada-maíz", "Despunte-maíz", "Cosecha-maíz"
-                FROM table_clima24
+                FROM table_clima25
                 WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}' AND "Informante" = '{selected_informant}'
                 ORDER BY "Fecha" ASC;
             """, conn)
@@ -562,14 +569,14 @@ def update_evolution_graph(selected_comunidad, selected_month, selected_year, _,
         if selected_informant == 'Todos':
             beans_df = pd.read_sql_query(f"""
                 SELECT "Fecha", "Informante", "Labranza-frijol", "Deshierba-frijol", "Siembra-frijol", "Cosecha-frijol"
-                FROM table_clima24
+                FROM table_clima25
                 WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}'
                 ORDER BY "Fecha" ASC;
             """, conn)
         else:
             beans_df = pd.read_sql_query(f"""
                 SELECT "Fecha", "Informante", "Labranza-frijol", "Deshierba-frijol", "Siembra-frijol", "Cosecha-frijol"
-                FROM table_clima24
+                FROM table_clima25
                 WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}' AND "Informante" = '{selected_informant}'
                 ORDER BY "Fecha" ASC;
             """, conn)
@@ -762,13 +769,13 @@ def update_condition_days(selected_comunidad, selected_month, selected_year, _, 
         if selected_informant == 'Todos':
             query = f"""
             SELECT "Fecha", "Soleado", "Lluvioso", "Nublado"
-            FROM table_clima24
+            FROM table_clima25
             WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}'
             """
         else:
             query = f"""
             SELECT "Fecha", "Soleado", "Lluvioso", "Nublado"
-            FROM table_clima24
+            FROM table_clima25
             WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}' AND "Informante" = '{selected_informant}'
             """
         df = pd.read_sql(query, conn)
@@ -905,7 +912,7 @@ def update_condition_average_graph(selected_comunidad, selected_year, _):
         # Update query to fetch data for the selected year and community
         query = f"""
         SELECT "Mes", "Soleado", "Lluvioso", "Nublado", "Helada"
-        FROM table_clima24 
+        FROM table_clima25 
         WHERE "Año" = '{selected_year}' AND "Comunidad" = '{selected_comunidad}';
         """
         df = pd.read_sql(query, conn)
@@ -967,7 +974,7 @@ def update_climate_discrepancies_table(selected_comunidad, selected_month, selec
     with engine.connect() as conn:
         query = f"""
         SELECT "Fecha", "Informante", "Soleado", "Lluvioso", "Nublado"
-        FROM table_clima24
+        FROM table_clima25
         WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}'
         ORDER BY "Fecha" ASC;
         """
@@ -1080,13 +1087,13 @@ def update_maiz_risks_table(selected_comunidad, selected_year, selected_month, s
             if selected_informant == 'Todos':
                 query = f"""
                 SELECT "Fecha", "Informante", "Riesgo helada-maíz", "Riesgo sequía-maíz", "Riesgo golpe de calor-maíz", "Riesgo inundación-maíz", "Riesgo plagas y enfermedades-maíz", "Riesgo granizada-maíz"
-                FROM table_clima24
+                FROM table_clima25
                 WHERE "Comunidad" = '{selected_comunidad}' AND "Año" = '{selected_year}' AND "Mes" = '{selected_month}'
                 """
             else:
                 query = f"""
                 SELECT "Fecha", "Informante", "Riesgo helada-maíz", "Riesgo sequía-maíz", "Riesgo golpe de calor-maíz", "Riesgo inundación-maíz", "Riesgo plagas y enfermedades-maíz", "Riesgo granizada-maíz"
-                FROM table_clima24
+                FROM table_clima25
                 WHERE "Comunidad" = '{selected_comunidad}' AND "Año" = '{selected_year}' AND "Mes" = '{selected_month}' AND "Informante" = '{selected_informant}'
                 """
             df = pd.read_sql(query, conn)
@@ -1160,13 +1167,13 @@ def update_frijol_risks_table(selected_comunidad, selected_year, selected_month,
             if selected_informant == 'Todos':
                 query = f"""
                 SELECT "Fecha", "Informante", "Riesgo helada-frijol", "Riesgo sequía-frijol", "Riesgo golpe de calor-frijol", "Riesgo inundación-frijol", "Riesgo plagas y enfermedades-frijol", "Riesgo granizada-frijol"
-                FROM table_clima24
+                FROM table_clima25
                 WHERE "Comunidad" = '{selected_comunidad}' AND "Año" = '{selected_year}' AND "Mes" = '{selected_month}'
                 """
             else:
                 query = f"""
                 SELECT "Fecha", "Informante", "Riesgo helada-frijol", "Riesgo sequía-frijol", "Riesgo golpe de calor-frijol", "Riesgo inundación-frijol", "Riesgo plagas y enfermedades-frijol", "Riesgo granizada-frijol"
-                FROM table_clima24
+                FROM table_clima25
                 WHERE "Comunidad" = '{selected_comunidad}' AND "Año" = '{selected_year}' AND "Mes" = '{selected_month}' AND "Informante" = '{selected_informant}'
                 """
             df = pd.read_sql(query, conn)
@@ -1250,14 +1257,14 @@ def update_maiz_status_graph(selected_comunidad, selected_month, selected_year, 
             if selected_informant == 'Todos':
                 query = f"""
                 SELECT "Fecha", "Estado del maíz"
-                FROM table_clima24
+                FROM table_clima25
                 WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}'
                 ORDER BY "Fecha" ASC;
                 """
             else:
                 query = f"""
                 SELECT "Fecha", "Estado del maíz"
-                FROM table_clima24
+                FROM table_clima25
                 WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}' AND "Informante" = '{selected_informant}'
                 ORDER BY "Fecha" ASC;
                 """
@@ -1319,14 +1326,14 @@ def update_frijol_status_graph(selected_comunidad, selected_month, selected_year
             if selected_informant == 'Todos':
                 query = f"""
                 SELECT "Fecha", "Estado del frijol"
-                FROM table_clima24
+                FROM table_clima25
                 WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}'
                 ORDER BY "Fecha" ASC;
                 """
             else:
                 query = f"""
                 SELECT "Fecha", "Estado del frijol"
-                FROM table_clima24
+                FROM table_clima25
                 WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}' AND "Informante" = '{selected_informant}'
                 ORDER BY "Fecha" ASC;
                 """
@@ -1387,7 +1394,7 @@ def update_informant_ranking(selected_comunidad, selected_month, selected_year, 
     with engine.connect() as conn:
         query = f"""
         SELECT "Informante", COUNT(DISTINCT "Fecha") AS "Días Respondidos"
-        FROM table_clima24
+        FROM table_clima25
         WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}'
         GROUP BY "Informante"
         ORDER BY "Días Respondidos" DESC
