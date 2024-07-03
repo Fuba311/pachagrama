@@ -789,8 +789,9 @@ def update_climate_discrepancies_table(selected_comunidad, selected_month, selec
 
     df['Fecha'] = pd.to_datetime(df['Fecha'])
 
-    # Exclude rows where all weather conditions are NaN
-    df = df.dropna(subset=['Soleado', 'Lluvioso', 'Nublado', 'Granizada', 'Helada'], how='all')
+    # Exclude rows where all climate conditions are NaN or empty string
+    climate_columns = ['Soleado', 'Lluvioso', 'Nublado', 'Granizada', 'Helada']
+    df = df[~df[climate_columns].isna().all(axis=1) & ~(df[climate_columns] == '').all(axis=1)]
 
     discrepancy_data = []
     prev_condition = None
@@ -803,20 +804,20 @@ def update_climate_discrepancies_table(selected_comunidad, selected_month, selec
         'Helada': 'rgb(200, 220, 255)'
     }
 
-    for condition in ['Soleado', 'Lluvioso', 'Nublado', 'Granizada', 'Helada']:
-        condition_df = df.groupby('Fecha')[['Informante', condition]].apply(lambda x: x.values.tolist()).reset_index()
-        condition_df['Multiple_Responses'] = condition_df[0].apply(lambda x: len(set(response for _, response in x if pd.notna(response))) > 1)
+    for condition in climate_columns:
+        condition_df = df.groupby('Fecha')[['Informante', condition]].apply(lambda x: x.dropna().values.tolist()).reset_index()
+        condition_df['Multiple_Responses'] = condition_df[0].apply(lambda x: len(set(response for _, response in x if pd.notna(response) and response != '')) > 1)
         discrepancy_days = condition_df[condition_df['Multiple_Responses']]['Fecha'].tolist()
 
         for day in discrepancy_days:
-            day_df = df[(df['Fecha'] == day) & (df[condition].notna())]
-            informants_info = '\n'.join([f"• {informant} (Respuesta: {response if pd.notna(response) else 'Nada'})" for informant, response in day_df[['Informante', condition]].values])
+            day_df = df[(df['Fecha'] == day) & (df[condition].notna()) & (df[condition] != '')]
+            informants_info = '\n'.join([f"• {informant} (Respuesta: {response})" for informant, response in day_df[['Informante', condition]].values])
             
             if condition != prev_condition:
                 discrepancy_data.append({
                     'Categoría': condition,
                     'Fecha': day.strftime('%d'),
-                    'Informantes': informants_info.replace('nan', 'Nada'),
+                    'Informantes': informants_info,
                     'Color': condition_colors[condition]
                 })
                 prev_condition = condition
@@ -824,7 +825,7 @@ def update_climate_discrepancies_table(selected_comunidad, selected_month, selec
                 discrepancy_data.append({
                     'Categoría': '',
                     'Fecha': day.strftime('%d'),
-                    'Informantes': informants_info.replace('nan', 'Nada'),
+                    'Informantes': informants_info,
                     'Color': condition_colors[condition]
                 })
 
