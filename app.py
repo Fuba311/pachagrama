@@ -590,7 +590,7 @@ def update_evolution_graph(selected_comunidad, selected_month, selected_year, _,
         maize_labor_columns = ['Labranza-maíz', 'Fertilización-maíz', 'Siembra-maíz', 'Aterrada-maíz', 'Despunte-maíz', 'Cosecha-maíz']
 
         for labor, column in zip(maize_labors, maize_labor_columns):
-            maize_df[labor] = maize_df[column].apply(lambda x: 1 if x == '1.0' else pd.NA)
+            maize_df[labor] = maize_df[column].apply(lambda x: 1 if x == '1' else pd.NA)
 
         maize_data = maize_df.melt(id_vars=['Fecha', 'Informante'], value_vars=maize_labors, var_name='Labor', value_name='Realizó')
         maize_data = maize_data[maize_data['Realizó'].notna()]
@@ -604,7 +604,7 @@ def update_evolution_graph(selected_comunidad, selected_month, selected_year, _,
         beans_labor_columns = ['Labranza-frijol', 'Deshierba-frijol', 'Siembra-frijol', 'Cosecha-frijol']
 
         for labor, column in zip(beans_labors, beans_labor_columns):
-            beans_df[labor] = beans_df[column].apply(lambda x: 1 if x == '1.0' else pd.NA)
+            beans_df[labor] = beans_df[column].apply(lambda x: 1 if x == '1' else pd.NA)
 
         beans_data = beans_df.melt(id_vars=['Fecha', 'Informante'], value_vars=beans_labors, var_name='Labor', value_name='Realizó')
         beans_data = beans_data[beans_data['Realizó'].notna()]
