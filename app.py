@@ -375,8 +375,17 @@ def update_labor_evolution_graph(selected_comunidad, selected_month, selected_ye
                 WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}' AND "Informante" = '{selected_informant}'
                 ORDER BY "Fecha" ASC;
             """
+        
         maize_df = pd.read_sql(maize_query, conn)
         beans_df = pd.read_sql(beans_query, conn)
+
+        # Get the total number of unique informants
+        total_informants_query = f"""
+        SELECT COUNT(DISTINCT "Informante") as total_informants
+        FROM table_clima26
+        WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}';
+        """
+        total_informants = pd.read_sql(total_informants_query, conn).iloc[0]['total_informants']
 
     maize_df['Fecha'] = pd.to_datetime(maize_df['Fecha'])
     beans_df['Fecha'] = pd.to_datetime(beans_df['Fecha'])
@@ -400,6 +409,55 @@ def update_labor_evolution_graph(selected_comunidad, selected_month, selected_ye
     beans_data = beans_data[beans_data['Realizó'] == 1]
 
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.5, 0.5])
+
+    # Color coding function
+    def get_color(count):
+        percentage = count / total_informants * 100
+        if percentage == 0:
+            return 'rgba(255, 0, 0, 0.2)'  # Red
+        elif 0 < percentage < 25:
+            return 'rgba(255, 165, 0, 0.2)'  # Orange
+        elif 25 <= percentage < 75:
+            return 'rgba(255, 255, 0, 0.2)'  # Yellow
+        else:
+            return 'rgba(0, 255, 0, 0.2)'  # Green
+
+    # Get all unique dates
+    all_dates = pd.date_range(start=min(maize_df['Fecha'].min(), beans_df['Fecha'].min()),
+                              end=max(maize_df['Fecha'].max(), beans_df['Fecha'].max()),
+                              freq='D')
+
+    # Add color-coded background for maize
+    for date in all_dates:
+        count = maize_df[maize_df['Fecha'] == date].shape[0]
+        color = get_color(count)
+        fig.add_shape(
+            type="rect",
+            x0=date,
+            x1=date + pd.Timedelta(days=1),
+            y0=0,
+            y1=len(maize_labors),
+            fillcolor=color,
+            line_width=0,
+            layer="below",
+            row=1, col=1
+        )
+
+    # Add color-coded background for beans
+    for date in all_dates:
+        count = beans_df[beans_df['Fecha'] == date].shape[0]
+        color = get_color(count)
+        fig.add_shape(
+            type="rect",
+            x0=date,
+            x1=date + pd.Timedelta(days=1),
+            y0=0,
+            y1=len(beans_labors),
+            fillcolor=color,
+            line_width=0,
+            layer="below",
+            row=2, col=1
+        )
 
     # Maize data
     for labor in maize_labors:
@@ -460,9 +518,7 @@ def update_labor_evolution_graph(selected_comunidad, selected_month, selected_ye
     )
 
     fig.update_yaxes(
-        showgrid=True,
-        gridwidth=1,
-        gridcolor='LightPink',
+        showgrid=False,
     )
 
     return fig
@@ -860,7 +916,7 @@ def update_climate_discrepancies_table(selected_comunidad, selected_month, selec
 
     with engine.connect() as conn:
         query = f"""
-        SELECT "Fecha", "Informante", "Soleado", "Lluvioso", "Nublado", "Granizada", "Helada"
+        SELECT "Fecha", "Informante", "Soleado", "Lluvioso", "Nublado"
         FROM table_clima26
         WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}'
         ORDER BY "Fecha" ASC;
@@ -872,50 +928,39 @@ def update_climate_discrepancies_table(selected_comunidad, selected_month, selec
 
     df['Fecha'] = pd.to_datetime(df['Fecha'])
 
-    # Exclude rows where all climate conditions are NaN, None, or empty string
-    climate_columns = ['Soleado', 'Lluvioso', 'Nublado', 'Granizada', 'Helada']
-    df['all_nan'] = df[climate_columns].apply(lambda x: x.isna().all() or (x == '').all(), axis=1)
-    df = df[~df['all_nan']]
-
-    if df.empty:
-        return html.Div('No se encontraron datos válidos para este mes.')
-
     discrepancy_data = []
     prev_condition = None
 
     condition_colors = {
         'Soleado': 'rgb(200, 220, 255)',  
         'Lluvioso': 'rgb(200, 220, 255)',
-        'Nublado': 'rgb(200, 220, 255)',
-        'Granizada': 'rgb(200, 220, 255)',
-        'Helada': 'rgb(200, 220, 255)'
+        'Nublado': 'rgb(200, 220, 255)'  
     }
 
-    for condition in climate_columns:
-        condition_df = df.groupby('Fecha')[['Informante', condition]].apply(lambda x: x.dropna().values.tolist()).reset_index()
-        condition_df['Multiple_Responses'] = condition_df[0].apply(lambda x: len(set(response for _, response in x if pd.notna(response) and response != '')) > 1)
+    for condition in ['Soleado', 'Lluvioso', 'Nublado']:
+        condition_df = df.groupby('Fecha')[['Informante', condition]].apply(lambda x: x.values.tolist()).reset_index()
+        condition_df['Multiple_Responses'] = condition_df[0].apply(lambda x: len(set(response for _, response in x)) > 1)
         discrepancy_days = condition_df[condition_df['Multiple_Responses']]['Fecha'].tolist()
 
         for day in discrepancy_days:
-            day_df = df[(df['Fecha'] == day) & (df[condition].notna()) & (df[condition] != '')]
-            informants_info = '\n'.join([f"• {informant} (Respuesta: {response})" for informant, response in day_df[['Informante', condition]].values if pd.notna(response) and response != ''])
+            day_df = df[(df['Fecha'] == day) & (df[condition].notna())]
+            informants_info = '\n'.join([f"• {informant} (Respuesta: {response if pd.notna(response) else 'Nada'})" for informant, response in day_df[['Informante', condition]].values])
             
-            if informants_info:  # Only add to discrepancy_data if there's actual information
-                if condition != prev_condition:
-                    discrepancy_data.append({
-                        'Categoría': condition,
-                        'Fecha': day.strftime('%d'),
-                        'Informantes': informants_info,
-                        'Color': condition_colors[condition]
-                    })
-                    prev_condition = condition
-                else:
-                    discrepancy_data.append({
-                        'Categoría': '',
-                        'Fecha': day.strftime('%d'),
-                        'Informantes': informants_info,
-                        'Color': condition_colors[condition]
-                    })
+            if condition != prev_condition:
+                discrepancy_data.append({
+                    'Categoría': condition,
+                    'Fecha': day.strftime('%d'),
+                    'Informantes': informants_info.replace('nan', 'Nada'),  # Replace 'nan' with 'Nada'
+                    'Color': condition_colors[condition]
+                })
+                prev_condition = condition
+            else:
+                discrepancy_data.append({
+                    'Categoría': '',
+                    'Fecha': day.strftime('%d'),
+                    'Informantes': informants_info.replace('nan', 'Nada'),  # Replace 'nan' with 'Nada'
+                    'Color': condition_colors[condition]
+                })
 
     if len(discrepancy_data) == 0:
         return html.Div('No se encontraron días con respuestas diferentes para este mes.')
@@ -944,13 +989,13 @@ def update_climate_discrepancies_table(selected_comunidad, selected_month, selec
             'padding': '8px',
             'whiteSpace': 'normal',
             'height': 'auto',
-            'color': 'black'
+            'color': 'black'  # Black text color for readability
         },
         style_data_conditional=style_data_conditional,
         style_header={
-            'backgroundColor': 'rgb(100, 150, 250)',
+            'backgroundColor': 'rgb(100, 150, 250)',  # Darker blue header
             'fontWeight': 'bold',
-            'color': 'white'
+            'color': 'white'  # White header text
         },
         style_as_list_view=True,
         style_table={
@@ -969,7 +1014,6 @@ def update_climate_discrepancies_table(selected_comunidad, selected_month, selec
         html.H4(f"Días con Discrepancias Climáticas en {selected_comunidad} - {selected_month}/{selected_year}", style={'margin-bottom': '60px'}),
         table
     ], style={'margin-top': '20px', 'margin-bottom': '60px'})
-
 
 @app.callback(
     Output('frijol-risks-table', 'children'),
