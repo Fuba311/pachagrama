@@ -701,13 +701,13 @@ def update_condition_days(selected_comunidad, selected_month, selected_year, _, 
     with engine.connect() as conn:
         if selected_informant == 'Todos':
             query = f"""
-            SELECT "Fecha", "Soleado", "Lluvioso", "Nublado"
+            SELECT "Fecha", "Soleado", "Lluvioso", "Nublado", "Granizada", "Helada"
             FROM table_clima26
             WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}'
             """
         else:
             query = f"""
-            SELECT "Fecha", "Soleado", "Lluvioso", "Nublado"
+            SELECT "Fecha", "Soleado", "Lluvioso", "Nublado", "Granizada", "Helada"
             FROM table_clima26
             WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}' AND "Informante" = '{selected_informant}'
             """
@@ -717,16 +717,20 @@ def update_condition_days(selected_comunidad, selected_month, selected_year, _, 
 
     # Map the string responses to numeric values, including NaN as 'Nada' = 0
     response_mapping = {'Nada': 0, 'Poco': 1, 'Normal': 2, 'Mucho': 3, None: 0}
-    for condition in ['Soleado', 'Lluvioso', 'Nublado']:
+    for condition in ['Soleado', 'Lluvioso', 'Nublado', 'Granizada', 'Helada']:
         df[condition] = df[condition].map(response_mapping).fillna(0)  # Treat NaN as 'Nada'
 
     # Prepare display format for each condition
     data = []
-    for condition in ['Soleado', 'Lluvioso', 'Nublado']:
+    for condition in ['Soleado', 'Lluvioso', 'Nublado', 'Granizada', 'Helada']:
         condition_df = df.groupby('Fecha')[condition].mean().reset_index()
         condition_df['Día'] = condition_df['Fecha'].dt.strftime('%d')
         condition_df['Intensidad'] = condition_df[condition].round(1)
-        condition_df = condition_df[condition_df['Intensidad'] > 2.5][['Día', 'Intensidad']]
+        
+        if condition in ['Granizada', 'Helada']:
+            condition_df = condition_df[condition_df['Intensidad'] > 0]
+        else:
+            condition_df = condition_df[condition_df['Intensidad'] > 2.5]
         
         if not condition_df.empty:
             data.append({"Riesgo": condition, "Días": condition_df.iloc[0]['Día'], "Intensidad": condition_df.iloc[0]['Intensidad']})
@@ -778,6 +782,7 @@ def update_condition_days(selected_comunidad, selected_month, selected_year, _, 
                 'whiteSpace': 'normal',
                 'height': 'auto',
                 'lineHeight': '1.2'
+                
             }
         ],
         style_table={
@@ -788,7 +793,7 @@ def update_condition_days(selected_comunidad, selected_month, selected_year, _, 
     )
 
     return html.Div([
-        html.H4(f"Fechas e intensidades superiores a 2.5 (Normal-Mucho) para {selected_month} en {selected_comunidad}", style={'textAlign': 'center', 'color': 'rgb(50, 90, 180)'}),
+        html.H4(f"Fechas e intensidades para {selected_month} en {selected_comunidad}", style={'textAlign': 'center', 'color': 'rgb(50, 90, 180)'}),
         table
     ], style={'margin-bottom': '50px'})
 
@@ -848,7 +853,7 @@ def update_climate_discrepancies_table(selected_comunidad, selected_month, selec
 
     with engine.connect() as conn:
         query = f"""
-        SELECT "Fecha", "Informante", "Soleado", "Lluvioso", "Nublado"
+        SELECT "Fecha", "Informante", "Soleado", "Lluvioso", "Nublado", "Granizada", "Helada"
         FROM table_clima26
         WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}'
         ORDER BY "Fecha" ASC;
@@ -860,18 +865,23 @@ def update_climate_discrepancies_table(selected_comunidad, selected_month, selec
 
     df['Fecha'] = pd.to_datetime(df['Fecha'])
 
+    # Exclude rows where all weather conditions are NaN
+    df = df.dropna(subset=['Soleado', 'Lluvioso', 'Nublado', 'Granizada', 'Helada'], how='all')
+
     discrepancy_data = []
     prev_condition = None
 
     condition_colors = {
         'Soleado': 'rgb(200, 220, 255)',  
         'Lluvioso': 'rgb(200, 220, 255)',
-        'Nublado': 'rgb(200, 220, 255)'  
+        'Nublado': 'rgb(200, 220, 255)',
+        'Granizada': 'rgb(200, 220, 255)',
+        'Helada': 'rgb(200, 220, 255)'
     }
 
-    for condition in ['Soleado', 'Lluvioso', 'Nublado']:
+    for condition in ['Soleado', 'Lluvioso', 'Nublado', 'Granizada', 'Helada']:
         condition_df = df.groupby('Fecha')[['Informante', condition]].apply(lambda x: x.values.tolist()).reset_index()
-        condition_df['Multiple_Responses'] = condition_df[0].apply(lambda x: len(set(response for _, response in x)) > 1)
+        condition_df['Multiple_Responses'] = condition_df[0].apply(lambda x: len(set(response for _, response in x if pd.notna(response))) > 1)
         discrepancy_days = condition_df[condition_df['Multiple_Responses']]['Fecha'].tolist()
 
         for day in discrepancy_days:
@@ -882,7 +892,7 @@ def update_climate_discrepancies_table(selected_comunidad, selected_month, selec
                 discrepancy_data.append({
                     'Categoría': condition,
                     'Fecha': day.strftime('%d'),
-                    'Informantes': informants_info.replace('nan', 'Nada'),  # Replace 'nan' with 'Nada'
+                    'Informantes': informants_info.replace('nan', 'Nada'),
                     'Color': condition_colors[condition]
                 })
                 prev_condition = condition
@@ -890,7 +900,7 @@ def update_climate_discrepancies_table(selected_comunidad, selected_month, selec
                 discrepancy_data.append({
                     'Categoría': '',
                     'Fecha': day.strftime('%d'),
-                    'Informantes': informants_info.replace('nan', 'Nada'),  # Replace 'nan' with 'Nada'
+                    'Informantes': informants_info.replace('nan', 'Nada'),
                     'Color': condition_colors[condition]
                 })
 
@@ -921,13 +931,13 @@ def update_climate_discrepancies_table(selected_comunidad, selected_month, selec
             'padding': '8px',
             'whiteSpace': 'normal',
             'height': 'auto',
-            'color': 'black'  # Black text color for readability
+            'color': 'black'
         },
         style_data_conditional=style_data_conditional,
         style_header={
-            'backgroundColor': 'rgb(100, 150, 250)',  # Darker blue header
+            'backgroundColor': 'rgb(100, 150, 250)',
             'fontWeight': 'bold',
-            'color': 'white'  # White header text
+            'color': 'white'
         },
         style_as_list_view=True,
         style_table={
