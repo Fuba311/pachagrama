@@ -916,7 +916,7 @@ def update_climate_discrepancies_table(selected_comunidad, selected_month, selec
 
     with engine.connect() as conn:
         query = f"""
-        SELECT "Fecha", "Informante", "Soleado", "Lluvioso", "Nublado"
+        SELECT "Fecha", "Informante", "Soleado", "Lluvioso", "Nublado", "Granizada", "Helada"
         FROM table_clima26
         WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}'
         ORDER BY "Fecha" ASC;
@@ -928,39 +928,49 @@ def update_climate_discrepancies_table(selected_comunidad, selected_month, selec
 
     df['Fecha'] = pd.to_datetime(df['Fecha'])
 
+    # Exclude rows where all five climate columns are empty or NaN
+    climate_columns = ['Soleado', 'Lluvioso', 'Nublado', 'Granizada', 'Helada']
+    df = df.dropna(subset=climate_columns, how='all').replace('', pd.NA).dropna(subset=climate_columns, how='all')
+
+    if df.empty:
+        return html.Div('No se encontraron datos climáticos válidos para este mes.')
+
     discrepancy_data = []
     prev_condition = None
 
     condition_colors = {
         'Soleado': 'rgb(200, 220, 255)',  
         'Lluvioso': 'rgb(200, 220, 255)',
-        'Nublado': 'rgb(200, 220, 255)'  
+        'Nublado': 'rgb(200, 220, 255)',
+        'Granizada': 'rgb(200, 220, 255)',
+        'Helada': 'rgb(200, 220, 255)'
     }
 
-    for condition in ['Soleado', 'Lluvioso', 'Nublado']:
-        condition_df = df.groupby('Fecha')[['Informante', condition]].apply(lambda x: x.values.tolist()).reset_index()
+    for condition in climate_columns:
+        condition_df = df.groupby('Fecha')[['Informante', condition]].apply(lambda x: x.dropna().values.tolist()).reset_index()
         condition_df['Multiple_Responses'] = condition_df[0].apply(lambda x: len(set(response for _, response in x)) > 1)
         discrepancy_days = condition_df[condition_df['Multiple_Responses']]['Fecha'].tolist()
 
         for day in discrepancy_days:
             day_df = df[(df['Fecha'] == day) & (df[condition].notna())]
-            informants_info = '\n'.join([f"• {informant} (Respuesta: {response if pd.notna(response) else 'Nada'})" for informant, response in day_df[['Informante', condition]].values])
+            informants_info = '\n'.join([f"• {informant} (Respuesta: {response})" for informant, response in day_df[['Informante', condition]].values if pd.notna(response)])
             
-            if condition != prev_condition:
-                discrepancy_data.append({
-                    'Categoría': condition,
-                    'Fecha': day.strftime('%d'),
-                    'Informantes': informants_info.replace('nan', 'Nada'),  # Replace 'nan' with 'Nada'
-                    'Color': condition_colors[condition]
-                })
-                prev_condition = condition
-            else:
-                discrepancy_data.append({
-                    'Categoría': '',
-                    'Fecha': day.strftime('%d'),
-                    'Informantes': informants_info.replace('nan', 'Nada'),  # Replace 'nan' with 'Nada'
-                    'Color': condition_colors[condition]
-                })
+            if informants_info:
+                if condition != prev_condition:
+                    discrepancy_data.append({
+                        'Categoría': condition,
+                        'Fecha': day.strftime('%d'),
+                        'Informantes': informants_info,
+                        'Color': condition_colors[condition]
+                    })
+                    prev_condition = condition
+                else:
+                    discrepancy_data.append({
+                        'Categoría': '',
+                        'Fecha': day.strftime('%d'),
+                        'Informantes': informants_info,
+                        'Color': condition_colors[condition]
+                    })
 
     if len(discrepancy_data) == 0:
         return html.Div('No se encontraron días con respuestas diferentes para este mes.')
@@ -989,13 +999,13 @@ def update_climate_discrepancies_table(selected_comunidad, selected_month, selec
             'padding': '8px',
             'whiteSpace': 'normal',
             'height': 'auto',
-            'color': 'black'  # Black text color for readability
+            'color': 'black'
         },
         style_data_conditional=style_data_conditional,
         style_header={
-            'backgroundColor': 'rgb(100, 150, 250)',  # Darker blue header
+            'backgroundColor': 'rgb(100, 150, 250)',
             'fontWeight': 'bold',
-            'color': 'white'  # White header text
+            'color': 'white'
         },
         style_as_list_view=True,
         style_table={
