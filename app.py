@@ -68,9 +68,7 @@ app.layout = dbc.Container([
       # Graphs and tables wrapped for visibility control
     dcc.Loading(id='loading-div', children=[dcc.Graph(id='evolution-graph')]),
     html.Div(id='graphs-container', children=[
-        dcc.Loading(id='loading-div2', children=[dcc.Graph(id='condition-average-graph')]),
         dcc.Loading(id='loading-div3', children=[html.Div(id='condition-days-table')]),
-        dcc.Loading(id='loading-div4', children=[html.Div(id='weather-condition-frequency')])
     ]),
     html.Div(id='maiz-risks-table'),
     html.Div(id='frijol-risks-table'),
@@ -333,75 +331,6 @@ def update_informant_dropdown(selected_comunidad, selected_year, selected_month,
             df = pd.read_sql(query, conn)
         options.extend([{'label': informant, 'value': informant} for informant in df['Informante'].tolist()])
     return options
-
-@app.callback(
-    Output('weather-condition-frequency', 'children'),
-    [Input('month-dropdown', 'value'),
-     Input('year-dropdown', 'value'),
-     Input('comunidad-dropdown', 'value'),
-     Input('upload-timestamp', 'children'),
-     Input('informant-dropdown', 'value')]
-)
-def update_graph(selected_month, selected_year, selected_comunidad, _, selected_informant):
-    if not selected_month or not selected_year or not selected_comunidad:
-        return html.Div("Seleccione una comunidad, un mes y un año para ver los gráficos.", style={'margin-top': '20px'})
-
-    with engine.connect() as conn:
-        if selected_informant == 'Todos':
-            query = f"""
-            SELECT "Fecha", "Informante", "Soleado", "Lluvioso", "Nublado", "Helada", "Granizada"
-            FROM table_clima26
-            WHERE "Mes" = '{selected_month}' AND "Año" = '{selected_year}' AND "Comunidad" = '{selected_comunidad}';
-            """
-        else:
-            query = f"""
-            SELECT "Fecha", "Informante", "Soleado", "Lluvioso", "Nublado", "Helada", "Granizada"
-            FROM table_clima26
-            WHERE "Mes" = '{selected_month}' AND "Año" = '{selected_year}' AND "Comunidad" = '{selected_comunidad}' AND "Informante" = '{selected_informant}';
-            """
-        df = pd.read_sql(query, conn)
-
-    # Fill NaN values with 'Nada' directly for processing
-    df.fillna('Nada', inplace=True)
-
-    # Count the total responses for each condition
-    plot_data = []
-    for condition in ['Soleado', 'Lluvioso', 'Nublado', 'Helada', 'Granizada']:
-        condition_data = df[condition].value_counts().reset_index()
-        condition_data.columns = ['Response', 'Count']
-        condition_data['Condition'] = condition
-        plot_data.append(condition_data)
-
-    plot_df = pd.concat(plot_data, ignore_index=True)
-
-    # Count the total number of responses
-    total_responses = len(df)
-
-    # Define the desired order of responses
-    response_order = ['Nada', 'Poco', 'Normal', 'Mucho']
-
-    fig = px.bar(plot_df, x='Condition', y='Count', color='Response', barmode='group',
-                 title=f"Frecuencia de Condiciones Climáticas para {selected_comunidad} - {selected_month}/{selected_year}",
-                 labels={"Count": "Número de Respuestas", "Condition": "Condición Climática", "Response": "Respuesta"},
-                 text='Count',
-                 category_orders={'Response': response_order})
-
-    fig.update_layout(
-        title={
-            'text': f"Frecuencia de Condiciones Climáticas para {selected_comunidad} - {selected_month}/{selected_year}<br>"
-                    f"Total de Respuestas: {total_responses}",
-            'y': 0.95,
-            'x': 0.5,
-            'xanchor': 'center',
-            'yanchor': 'top'
-        }
-    )
-
-    # Replace any 'nan' in the legend with 'Nada'
-    for trace in fig.data:
-        trace.name = trace.name.replace('nan', 'Nada')
-
-    return dcc.Graph(figure=fig)
 
 
 from pandas import to_numeric
@@ -902,64 +831,6 @@ def login(n, username, password):
             return True
     return False
 
-@app.callback(
-    Output('condition-average-graph', 'figure'),  # Ensure you have added a dcc.Graph with this ID in your layout
-    [Input('comunidad-dropdown', 'value'),  # Add comunidad-dropdown as an input
-     Input('year-dropdown', 'value'),
-     Input('upload-timestamp', 'children')]
-)
-def update_condition_average_graph(selected_comunidad, selected_year, _):
-    if selected_year is None or selected_comunidad is None:
-        return go.Figure()  # Return an empty graph if no year or community is selected
-
-    with engine.connect() as conn:
-        # Update query to fetch data for the selected year and community
-        query = f"""
-        SELECT "Mes", "Soleado", "Lluvioso", "Nublado", "Helada"
-        FROM table_clima26 
-        WHERE "Año" = '{selected_year}' AND "Comunidad" = '{selected_comunidad}';
-        """
-        df = pd.read_sql(query, conn)
-
-    # Map string responses to numeric values, ignoring NaNs
-    response_mapping = {'Poco': 1, 'Normal': 2, 'Mucho': 3}
-    for condition in ['Soleado', 'Lluvioso', 'Nublado', 'Helada']:
-        df[condition] = df[condition].map(response_mapping)
-
-    # Compute the average for each condition per month, ignoring NaNs in the calculation
-    monthly_averages = df.groupby('Mes')[['Soleado', 'Lluvioso', 'Nublado', 'Helada']].mean().reset_index()
-    
-    # Dynamically set the month order based on the available data
-    full_month_order = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
-                        'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
-    available_months = monthly_averages['Mes'].unique().tolist()
-    month_order = [month for month in full_month_order if month in available_months]
-    
-    # Melt the dataframe to make it suitable for a bar graph with plotly
-    melted_df = monthly_averages.melt(id_vars=['Mes'], var_name='Condición', value_name='Índice Promedio')
-
-    # Ensure the 'Mes' column in melted_df is ordered correctly based on month_order
-    melted_df['Mes'] = pd.Categorical(melted_df['Mes'], categories=month_order, ordered=True)
-
-    # Generate the bar graph
-    fig = px.bar(
-        melted_df,
-        x='Mes',
-        y='Índice Promedio',
-        color='Condición',
-        barmode='group',
-        title=f'Promedio de Condiciones Climáticas por Mes en el Año {selected_year}',
-        category_orders={"Mes": month_order}  # Ensures the x-axis follows the dynamic month order
-    )
-    
-    # Adjust the title to reflect the inclusion of the selected community
-    fig.update_layout(
-        title=f'Promedio de Condiciones Climáticas por Mes para {selected_comunidad} en el Año {selected_year}',
-        xaxis_title='Mes',
-        yaxis_title='Promedio de Respuestas'
-    )
-
-    return fig
 
 from collections import Counter
 
