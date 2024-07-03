@@ -385,93 +385,64 @@ def update_labor_evolution_graph(selected_comunidad, selected_month, selected_ye
     maize_labor_columns = ['Preparación-maíz', 'Labranza-maíz', 'Fertilización-maíz', 'Siembra-maíz', 'Aterrada-maíz', 'Despunte-maíz', 'Cosecha-maíz']
 
     for labor, column in zip(maize_labors, maize_labor_columns):
-        maize_df[labor] = maize_df[column].apply(lambda x: 1 if x == '1.0' else pd.NA)
+        maize_df[labor] = maize_df[column].apply(lambda x: 1 if x == '1.0' else 0)
 
     maize_data = maize_df.melt(id_vars=['Fecha', 'Informante'], value_vars=maize_labors, var_name='Labor', value_name='Realizó')
-    maize_data = maize_data[maize_data['Realizó'].notna()]
+    maize_data = maize_data[maize_data['Realizó'] == 1]
 
     beans_labors = ['Labranza', 'Deshierba', 'Siembra', 'Cosecha']
     beans_labor_columns = ['Labranza-frijol', 'Deshierba-frijol', 'Siembra-frijol', 'Cosecha-frijol']
 
     for labor, column in zip(beans_labors, beans_labor_columns):
-        beans_df[labor] = beans_df[column].apply(lambda x: 1 if x == '1.0' else pd.NA)
+        beans_df[labor] = beans_df[column].apply(lambda x: 1 if x == '1.0' else 0)
 
     beans_data = beans_df.melt(id_vars=['Fecha', 'Informante'], value_vars=beans_labors, var_name='Labor', value_name='Realizó')
-    beans_data = beans_data[beans_data['Realizó'].notna()]
+    beans_data = beans_data[beans_data['Realizó'] == 1]
 
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.01, row_heights=[0.5, 0.5])
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.5, 0.5])
 
-    # Process and add maize data
-    maize_data_grouped = maize_data.groupby(['Fecha', 'Labor'])['Informante'].apply(list).reset_index()
-    maize_data_grouped['Informantes'] = maize_data_grouped['Informante'].apply(lambda x: ', '.join(x))
-    maize_data_grouped['Num_Informantes'] = maize_data_grouped['Informante'].apply(len)
+    # Maize data
+    for labor in maize_labors:
+        labor_data = maize_data[maize_data['Labor'] == labor]
+        fig.add_trace(go.Scatter(
+            x=labor_data['Fecha'],
+            y=[labor] * len(labor_data),
+            mode='markers',
+            name=labor,
+            marker=dict(size=10),
+            hoverinfo='text',
+            hovertext=[f"{row['Fecha'].strftime('%Y-%m-%d')}: {row['Informante']}" for _, row in labor_data.iterrows()],
+        ), row=1, col=1)
 
-    max_informantes_maize = max(maize_data_grouped['Num_Informantes']) if not maize_data_grouped.empty else 0
-    marker_size_maize = maize_data_grouped['Num_Informantes'] * 3 if max_informantes_maize > 0 else 6
+    # Beans data
+    for labor in beans_labors:
+        labor_data = beans_data[beans_data['Labor'] == labor]
+        fig.add_trace(go.Scatter(
+            x=labor_data['Fecha'],
+            y=[labor] * len(labor_data),
+            mode='markers',
+            name=labor,
+            marker=dict(size=10),
+            hoverinfo='text',
+            hovertext=[f"{row['Fecha'].strftime('%Y-%m-%d')}: {row['Informante']}" for _, row in labor_data.iterrows()],
+        ), row=2, col=1)
 
-    fig.add_trace(go.Scatter(
-        x=maize_data_grouped['Fecha'],
-        y=maize_data_grouped['Labor'],
-        mode='markers',
-        marker=dict(
-            size=marker_size_maize,
-            sizemode='area',
-            sizeref=2. * max_informantes_maize / (12. ** 2) if max_informantes_maize > 0 else 1,
-            sizemin=3
-        ),
-        name='Labores Maíz',
-        hovertemplate=
-        '<b>Fecha</b>: %{x}<br>' +
-        '<b>Labor</b>: %{y}<br>' +
-        '<b>Informantes</b>: %{text}',
-        text=maize_data_grouped['Informantes']
-    ), row=1, col=1)
-
-    # Process and add beans data
-    beans_data_grouped = beans_data.groupby(['Fecha', 'Labor'])['Informante'].apply(list).reset_index()
-    beans_data_grouped['Informantes'] = beans_data_grouped['Informante'].apply(lambda x: ', '.join(x))
-    beans_data_grouped['Num_Informantes'] = beans_data_grouped['Informante'].apply(len)
-
-    max_informantes_beans = max(beans_data_grouped['Num_Informantes']) if not beans_data_grouped.empty else 0
-    marker_size_beans = beans_data_grouped['Num_Informantes'] * 3 if max_informantes_beans > 0 else 6
-
-    fig.add_trace(go.Scatter(
-        x=beans_data_grouped['Fecha'],
-        y=beans_data_grouped['Labor'],
-        mode='markers',
-        marker=dict(
-            size=marker_size_beans,
-            sizemode='area',
-            sizeref=2. * max_informantes_beans / (12. ** 2) if max_informantes_beans > 0 else 1,
-            sizemin=3
-        ),
-        name='Labores Frijol',
-        hovertemplate=
-        '<b>Fecha</b>: %{x}<br>' +
-        '<b>Labor</b>: %{y}<br>' +
-        '<b>Informantes</b>: %{text}',
-        text=beans_data_grouped['Informantes']
-    ), row=2, col=1)
-
-    fig.update_yaxes(title=dict(text='🌽', font=dict(size=50), standoff=0), title_standoff=20, row=1, col=1)
-    fig.update_yaxes(title=dict(text='🫘', font=dict(size=50), standoff=0), title_standoff=20, row=2, col=1)
-
-    fig.update_xaxes(tickmode='auto', nticks=10, tickangle=0, row=2, col=1)
-
+    # Update layout
     fig.update_layout(
         showlegend=False,
-        margin=dict(l=100, r=50, t=20, b=20),
         height=400,
-        plot_bgcolor='rgba(0,0,0,0)',
-        paper_bgcolor='rgba(0,0,0,0)'
+        margin=dict(l=100, r=20, t=20, b=20),
+        yaxis=dict(title=dict(text='🌽', font=dict(size=30)), categoryorder='array', categoryarray=maize_labors[::-1]),
+        yaxis2=dict(title=dict(text='🫘', font=dict(size=30)), categoryorder='array', categoryarray=beans_labors[::-1]),
+        xaxis2=dict(title='Fecha'),
     )
 
-    # Move the condition icons to the left and rotate them by 90 degrees
-    for i, icon in enumerate(['🌽', '🫘']):
-        fig['layout'][f'yaxis{i+1}']['title']['text'] = f"<span style='margin-right: 20px; transform: rotate(90deg); display: inline-block;'>{icon}</span>"
+    # Rotate y-axis titles
+    fig.update_layout(yaxis_title_standoff=25, yaxis2_title_standoff=25)
+    fig['layout']['yaxis']['title']['textangle'] = 0
+    fig['layout']['yaxis2']['title']['textangle'] = 0
 
     return fig
-
 @app.callback(
     Output('climate-evolution-graph', 'figure'),
     [Input('comunidad-dropdown', 'value'),
@@ -797,7 +768,11 @@ def update_climate_discrepancies_table(selected_comunidad, selected_month, selec
 
     # Exclude rows where all climate conditions are NaN or empty string
     climate_columns = ['Soleado', 'Lluvioso', 'Nublado', 'Granizada', 'Helada']
-    df = df[~df[climate_columns].isna().all(axis=1) & ~(df[climate_columns] == '').all(axis=1)]
+    df['all_nan'] = df[climate_columns].apply(lambda x: x.isna().all() or (x == '').all(), axis=1)
+    df = df[~df['all_nan']]
+
+    if df.empty:
+        return html.Div('No se encontraron datos válidos para este mes.')
 
     discrepancy_data = []
     prev_condition = None
@@ -888,6 +863,7 @@ def update_climate_discrepancies_table(selected_comunidad, selected_month, selec
         html.H4(f"Días con Discrepancias Climáticas en {selected_comunidad} - {selected_month}/{selected_year}", style={'margin-bottom': '60px'}),
         table
     ], style={'margin-top': '20px', 'margin-bottom': '60px'})
+
 @app.callback(
     Output('maiz-risks-table', 'children'),
     [Input('comunidad-dropdown', 'value'),
