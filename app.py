@@ -523,7 +523,6 @@ def update_labor_evolution_graph(selected_comunidad, selected_month, selected_ye
 
     return fig
 
-
 @app.callback(
     Output('climate-evolution-graph', 'figure'),
     [Input('comunidad-dropdown', 'value'),
