@@ -336,7 +336,6 @@ def update_informant_dropdown(selected_comunidad, selected_year, selected_month,
 
 from pandas import to_numeric
 
-# Update the labor evolution graph callback
 @app.callback(
     Output('labor-evolution-graph', 'figure'),
     [Input('comunidad-dropdown', 'value'),
@@ -400,7 +399,7 @@ def update_labor_evolution_graph(selected_comunidad, selected_month, selected_ye
     beans_data = beans_df.melt(id_vars=['Fecha', 'Informante'], value_vars=beans_labors, var_name='Labor', value_name='Realizó')
     beans_data = beans_data[beans_data['Realizó'].notna()]
 
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, row_heights=[0.5, 0.5])
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.01, row_heights=[0.5, 0.5])
 
     # Process and add maize data
     maize_data_grouped = maize_data.groupby(['Fecha', 'Labor'])['Informante'].apply(list).reset_index()
@@ -408,7 +407,7 @@ def update_labor_evolution_graph(selected_comunidad, selected_month, selected_ye
     maize_data_grouped['Num_Informantes'] = maize_data_grouped['Informante'].apply(len)
 
     max_informantes_maize = max(maize_data_grouped['Num_Informantes']) if not maize_data_grouped.empty else 0
-    marker_size_maize = maize_data_grouped['Num_Informantes'] * 5 if max_informantes_maize > 0 else 10
+    marker_size_maize = maize_data_grouped['Num_Informantes'] * 3 if max_informantes_maize > 0 else 6
 
     fig.add_trace(go.Scatter(
         x=maize_data_grouped['Fecha'],
@@ -417,8 +416,8 @@ def update_labor_evolution_graph(selected_comunidad, selected_month, selected_ye
         marker=dict(
             size=marker_size_maize,
             sizemode='area',
-            sizeref=2. * max_informantes_maize / (20. ** 2) if max_informantes_maize > 0 else 1,
-            sizemin=4
+            sizeref=2. * max_informantes_maize / (12. ** 2) if max_informantes_maize > 0 else 1,
+            sizemin=3
         ),
         name='Labores Maíz',
         hovertemplate=
@@ -434,7 +433,7 @@ def update_labor_evolution_graph(selected_comunidad, selected_month, selected_ye
     beans_data_grouped['Num_Informantes'] = beans_data_grouped['Informante'].apply(len)
 
     max_informantes_beans = max(beans_data_grouped['Num_Informantes']) if not beans_data_grouped.empty else 0
-    marker_size_beans = beans_data_grouped['Num_Informantes'] * 5 if max_informantes_beans > 0 else 10
+    marker_size_beans = beans_data_grouped['Num_Informantes'] * 3 if max_informantes_beans > 0 else 6
 
     fig.add_trace(go.Scatter(
         x=beans_data_grouped['Fecha'],
@@ -443,8 +442,8 @@ def update_labor_evolution_graph(selected_comunidad, selected_month, selected_ye
         marker=dict(
             size=marker_size_beans,
             sizemode='area',
-            sizeref=2. * max_informantes_beans / (20. ** 2) if max_informantes_beans > 0 else 1,
-            sizemin=4
+            sizeref=2. * max_informantes_beans / (12. ** 2) if max_informantes_beans > 0 else 1,
+            sizemin=3
         ),
         name='Labores Frijol',
         hovertemplate=
@@ -454,15 +453,22 @@ def update_labor_evolution_graph(selected_comunidad, selected_month, selected_ye
         text=beans_data_grouped['Informantes']
     ), row=2, col=1)
 
-    fig.update_yaxes(title=dict(text='🌽', font=dict(size=50), standoff=20), row=1, col=1)
-    fig.update_yaxes(title=dict(text='🫘', font=dict(size=50), standoff=20), row=2, col=1)
+    fig.update_yaxes(title=dict(text='🌽', font=dict(size=50), standoff=0), title_standoff=20, row=1, col=1)
+    fig.update_yaxes(title=dict(text='🫘', font=dict(size=50), standoff=0), title_standoff=20, row=2, col=1)
+
+    fig.update_xaxes(tickmode='auto', nticks=10, tickangle=0, row=2, col=1)
 
     fig.update_layout(
-        title=dict(text=f'Labores Agrícolas para: {selected_month}/{selected_year}', x=0.5),
-        showlegend=True,
-        margin=dict(l=100, r=50, t=90, b=90),
-        height=800
+        showlegend=False,
+        margin=dict(l=100, r=50, t=20, b=20),
+        height=400,
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)'
     )
+
+    # Move the condition icons to the left and rotate them by 90 degrees
+    for i, icon in enumerate(['🌽', '🫘']):
+        fig['layout'][f'yaxis{i+1}']['title']['text'] = f"<span style='margin-right: 20px; transform: rotate(90deg); display: inline-block;'>{icon}</span>"
 
     return fig
 
@@ -811,23 +817,24 @@ def update_climate_discrepancies_table(selected_comunidad, selected_month, selec
 
         for day in discrepancy_days:
             day_df = df[(df['Fecha'] == day) & (df[condition].notna()) & (df[condition] != '')]
-            informants_info = '\n'.join([f"• {informant} (Respuesta: {response})" for informant, response in day_df[['Informante', condition]].values])
+            informants_info = '\n'.join([f"• {informant} (Respuesta: {response})" for informant, response in day_df[['Informante', condition]].values if pd.notna(response) and response != ''])
             
-            if condition != prev_condition:
-                discrepancy_data.append({
-                    'Categoría': condition,
-                    'Fecha': day.strftime('%d'),
-                    'Informantes': informants_info,
-                    'Color': condition_colors[condition]
-                })
-                prev_condition = condition
-            else:
-                discrepancy_data.append({
-                    'Categoría': '',
-                    'Fecha': day.strftime('%d'),
-                    'Informantes': informants_info,
-                    'Color': condition_colors[condition]
-                })
+            if informants_info:  # Only add to discrepancy_data if there's actual information
+                if condition != prev_condition:
+                    discrepancy_data.append({
+                        'Categoría': condition,
+                        'Fecha': day.strftime('%d'),
+                        'Informantes': informants_info,
+                        'Color': condition_colors[condition]
+                    })
+                    prev_condition = condition
+                else:
+                    discrepancy_data.append({
+                        'Categoría': '',
+                        'Fecha': day.strftime('%d'),
+                        'Informantes': informants_info,
+                        'Color': condition_colors[condition]
+                    })
 
     if len(discrepancy_data) == 0:
         return html.Div('No se encontraron días con respuestas diferentes para este mes.')
@@ -881,7 +888,6 @@ def update_climate_discrepancies_table(selected_comunidad, selected_month, selec
         html.H4(f"Días con Discrepancias Climáticas en {selected_comunidad} - {selected_month}/{selected_year}", style={'margin-bottom': '60px'}),
         table
     ], style={'margin-top': '20px', 'margin-bottom': '60px'})
-
 @app.callback(
     Output('maiz-risks-table', 'children'),
     [Input('comunidad-dropdown', 'value'),
