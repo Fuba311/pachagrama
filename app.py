@@ -432,17 +432,42 @@ def update_labor_evolution_graph(selected_comunidad, selected_month, selected_ye
         showlegend=False,
         height=400,
         margin=dict(l=100, r=20, t=20, b=20),
-        yaxis=dict(title=dict(text='🌽', font=dict(size=30)), categoryorder='array', categoryarray=maize_labors[::-1]),
-        yaxis2=dict(title=dict(text='🫘', font=dict(size=30)), categoryorder='array', categoryarray=beans_labors[::-1]),
+        yaxis=dict(
+            title=dict(
+                text='<span style="font-size: 30px;">🌽</span>',
+                standoff=25
+            ),
+            categoryorder='array',
+            categoryarray=maize_labors[::-1]
+        ),
+        yaxis2=dict(
+            title=dict(
+                text='<span style="font-size: 30px;">🫘</span>',
+                standoff=25
+            ),
+            categoryorder='array',
+            categoryarray=beans_labors[::-1]
+        ),
         xaxis2=dict(title='Fecha'),
     )
 
-    # Rotate y-axis titles
-    fig.update_layout(yaxis_title_standoff=25, yaxis2_title_standoff=25)
-    fig['layout']['yaxis']['title']['textangle'] = 0
-    fig['layout']['yaxis2']['title']['textangle'] = 0
+    # Update axes
+    fig.update_xaxes(
+        tickformat='%d-%m-%Y',
+        tickangle=45,
+        tickmode='auto',
+        nticks=10,
+    )
+
+    fig.update_yaxes(
+        showgrid=True,
+        gridwidth=1,
+        gridcolor='LightPink',
+    )
 
     return fig
+
+
 @app.callback(
     Output('climate-evolution-graph', 'figure'),
     [Input('comunidad-dropdown', 'value'),
@@ -740,6 +765,87 @@ def login(n, username, password):
 
 from collections import Counter
 
+
+@app.callback(
+    Output('maiz-risks-table', 'children'),
+    [Input('comunidad-dropdown', 'value'),
+     Input('year-dropdown', 'value'),
+     Input('month-dropdown', 'value'),
+     Input('labors-toggle', 'value'),
+     Input('upload-timestamp', 'children'),
+     Input('informant-dropdown', 'value')]
+)
+def update_maiz_risks_table(selected_comunidad, selected_year, selected_month, show_labors, _, selected_informant):
+    if 'show' in show_labors and selected_comunidad and selected_year and selected_month and selected_informant:
+        with engine.connect() as conn:
+            if selected_informant == 'Todos':
+                query = f"""
+                SELECT "Fecha", "Informante", "Riesgo helada-maíz", "Riesgo sequía-maíz", "Riesgo golpe de calor-maíz", "Riesgo inundación-maíz", "Riesgo plagas y enfermedades-maíz", "Riesgo granizada-maíz"
+                FROM table_clima26
+                WHERE "Comunidad" = '{selected_comunidad}' AND "Año" = '{selected_year}' AND "Mes" = '{selected_month}'
+                """
+            else:
+                query = f"""
+                SELECT "Fecha", "Informante", "Riesgo helada-maíz", "Riesgo sequía-maíz", "Riesgo golpe de calor-maíz", "Riesgo inundación-maíz", "Riesgo plagas y enfermedades-maíz", "Riesgo granizada-maíz"
+                FROM table_clima26
+                WHERE "Comunidad" = '{selected_comunidad}' AND "Año" = '{selected_year}' AND "Mes" = '{selected_month}' AND "Informante" = '{selected_informant}'
+                """
+            df = pd.read_sql(query, conn)
+
+
+        df['Fecha'] = pd.to_datetime(df['Fecha'])
+        df['Día'] = df['Fecha'].dt.strftime('%d')
+
+        risks = ['Helada', 'Sequía', 'Golpe de calor', 'Inundación', 'Plagas y enfermedades', 'Granizada']
+        risk_columns = ['Riesgo helada-maíz', 'Riesgo sequía-maíz', 'Riesgo golpe de calor-maíz', 'Riesgo inundación-maíz', 'Riesgo plagas y enfermedades-maíz', 'Riesgo granizada-maíz']
+
+        informants = df['Informante'].unique()
+
+        table_data = []
+        for risk, column in zip(risks, risk_columns):
+            risk_data = {'Riesgo': risk}
+            for informant in informants:
+                risk_data[informant] = ', '.join(df[(df[column] == '1.0') & (df['Informante'] == informant)]['Día'].tolist())
+            table_data.append(risk_data)
+
+        columns = [{'name': 'Riesgo', 'id': 'Riesgo'}] + [{'name': informant, 'id': informant} for informant in informants]
+
+        table = dash_table.DataTable(
+            data=table_data,
+            columns=columns,
+            style_cell={
+                'textAlign': 'left',
+                'padding': '8px',
+                'whiteSpace': 'normal',
+                'height': 'auto',
+                'backgroundColor': 'rgb(230, 240, 250)',  # Light blue cell background
+                'color': 'black'  # Black text color for readability
+            },
+            style_header={
+                'backgroundColor': 'rgb(100, 150, 250)',  # Darker blue header
+                'fontWeight': 'bold',
+                'color': 'white'  # White header text
+            },
+            style_as_list_view=True,
+            style_table={
+                'width': '100%',
+                'borderRadius': '10px',
+                'overflow': 'hidden'
+            },
+            style_data={
+                'whiteSpace': 'normal',
+                'height': 'auto',
+                'lineHeight': '15px'
+            }
+        )
+
+        return html.Div([
+            html.H4(f"Fechas del mes con problemas para el cultivo de Maíz en {selected_comunidad} - {selected_month}/{selected_year}", style={'margin-bottom': '60px'}),
+            table
+        ], style={'margin-top': '20px', 'margin-bottom': '60px'})
+    else:
+        return ""
+
 @app.callback(
     Output('climate-discrepancies-table', 'children'),
     [Input('comunidad-dropdown', 'value'),
@@ -766,7 +872,7 @@ def update_climate_discrepancies_table(selected_comunidad, selected_month, selec
 
     df['Fecha'] = pd.to_datetime(df['Fecha'])
 
-    # Exclude rows where all climate conditions are NaN or empty string
+    # Exclude rows where all climate conditions are NaN, None, or empty string
     climate_columns = ['Soleado', 'Lluvioso', 'Nublado', 'Granizada', 'Helada']
     df['all_nan'] = df[climate_columns].apply(lambda x: x.isna().all() or (x == '').all(), axis=1)
     df = df[~df['all_nan']]
@@ -864,85 +970,6 @@ def update_climate_discrepancies_table(selected_comunidad, selected_month, selec
         table
     ], style={'margin-top': '20px', 'margin-bottom': '60px'})
 
-@app.callback(
-    Output('maiz-risks-table', 'children'),
-    [Input('comunidad-dropdown', 'value'),
-     Input('year-dropdown', 'value'),
-     Input('month-dropdown', 'value'),
-     Input('labors-toggle', 'value'),
-     Input('upload-timestamp', 'children'),
-     Input('informant-dropdown', 'value')]
-)
-def update_maiz_risks_table(selected_comunidad, selected_year, selected_month, show_labors, _, selected_informant):
-    if 'show' in show_labors and selected_comunidad and selected_year and selected_month and selected_informant:
-        with engine.connect() as conn:
-            if selected_informant == 'Todos':
-                query = f"""
-                SELECT "Fecha", "Informante", "Riesgo helada-maíz", "Riesgo sequía-maíz", "Riesgo golpe de calor-maíz", "Riesgo inundación-maíz", "Riesgo plagas y enfermedades-maíz", "Riesgo granizada-maíz"
-                FROM table_clima26
-                WHERE "Comunidad" = '{selected_comunidad}' AND "Año" = '{selected_year}' AND "Mes" = '{selected_month}'
-                """
-            else:
-                query = f"""
-                SELECT "Fecha", "Informante", "Riesgo helada-maíz", "Riesgo sequía-maíz", "Riesgo golpe de calor-maíz", "Riesgo inundación-maíz", "Riesgo plagas y enfermedades-maíz", "Riesgo granizada-maíz"
-                FROM table_clima26
-                WHERE "Comunidad" = '{selected_comunidad}' AND "Año" = '{selected_year}' AND "Mes" = '{selected_month}' AND "Informante" = '{selected_informant}'
-                """
-            df = pd.read_sql(query, conn)
-
-
-        df['Fecha'] = pd.to_datetime(df['Fecha'])
-        df['Día'] = df['Fecha'].dt.strftime('%d')
-
-        risks = ['Helada', 'Sequía', 'Golpe de calor', 'Inundación', 'Plagas y enfermedades', 'Granizada']
-        risk_columns = ['Riesgo helada-maíz', 'Riesgo sequía-maíz', 'Riesgo golpe de calor-maíz', 'Riesgo inundación-maíz', 'Riesgo plagas y enfermedades-maíz', 'Riesgo granizada-maíz']
-
-        informants = df['Informante'].unique()
-
-        table_data = []
-        for risk, column in zip(risks, risk_columns):
-            risk_data = {'Riesgo': risk}
-            for informant in informants:
-                risk_data[informant] = ', '.join(df[(df[column] == '1.0') & (df['Informante'] == informant)]['Día'].tolist())
-            table_data.append(risk_data)
-
-        columns = [{'name': 'Riesgo', 'id': 'Riesgo'}] + [{'name': informant, 'id': informant} for informant in informants]
-
-        table = dash_table.DataTable(
-            data=table_data,
-            columns=columns,
-            style_cell={
-                'textAlign': 'left',
-                'padding': '8px',
-                'whiteSpace': 'normal',
-                'height': 'auto',
-                'backgroundColor': 'rgb(230, 240, 250)',  # Light blue cell background
-                'color': 'black'  # Black text color for readability
-            },
-            style_header={
-                'backgroundColor': 'rgb(100, 150, 250)',  # Darker blue header
-                'fontWeight': 'bold',
-                'color': 'white'  # White header text
-            },
-            style_as_list_view=True,
-            style_table={
-                'width': '100%',
-                'borderRadius': '10px',
-                'overflow': 'hidden'
-            },
-            style_data={
-                'whiteSpace': 'normal',
-                'height': 'auto',
-                'lineHeight': '15px'
-            }
-        )
-
-        return html.Div([
-            html.H4(f"Fechas del mes con problemas para el cultivo de Maíz en {selected_comunidad} - {selected_month}/{selected_year}", style={'margin-bottom': '60px'}),
-            table
-        ], style={'margin-top': '20px', 'margin-bottom': '60px'})
-    else:
-        return ""
 
 @app.callback(
     Output('frijol-risks-table', 'children'),
