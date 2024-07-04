@@ -362,6 +362,11 @@ def update_labor_evolution_graph(selected_comunidad, selected_month, selected_ye
                 WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}'
                 ORDER BY "Fecha" ASC;
             """
+            total_informants_query = f"""
+            SELECT COUNT(DISTINCT "Informante") as total_informants
+            FROM table_clima26
+            WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}';
+            """
         else:
             maize_query = f"""
                 SELECT "Fecha", "Informante", "Preparación-maíz", "Labranza-maíz", "Fertilización-maíz", "Siembra-maíz", "Aterrada-maíz", "Despunte-maíz", "Cosecha-maíz"
@@ -375,9 +380,13 @@ def update_labor_evolution_graph(selected_comunidad, selected_month, selected_ye
                 WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}' AND "Informante" = '{selected_informant}'
                 ORDER BY "Fecha" ASC;
             """
+            total_informants_query = f"""
+            SELECT 1 as total_informants;
+            """
         
         maize_df = pd.read_sql(maize_query, conn)
         beans_df = pd.read_sql(beans_query, conn)
+        total_informants = pd.read_sql(total_informants_query, conn).iloc[0]['total_informants']
 
     maize_df['Fecha'] = pd.to_datetime(maize_df['Fecha'])
     beans_df['Fecha'] = pd.to_datetime(beans_df['Fecha'])
@@ -410,6 +419,50 @@ def update_labor_evolution_graph(selected_comunidad, selected_month, selected_ye
     all_dates = pd.date_range(start=min(maize_df['Fecha'].min(), beans_df['Fecha'].min()),
                               end=max(maize_df['Fecha'].max(), beans_df['Fecha'].max()),
                               freq='D')
+
+    # Color coding function
+    def get_color(count):
+        percentage = count / total_informants * 100
+        if percentage == 0:
+            return 'rgba(255, 0, 0, 0.2)'  # Red
+        elif 0 < percentage < 25:
+            return 'rgba(255, 165, 0, 0.2)'  # Orange
+        elif 25 <= percentage < 75:
+            return 'rgba(255, 255, 0, 0.2)'  # Yellow
+        else:
+            return 'rgba(0, 255, 0, 0.2)'  # Green
+
+    # Add color-coded background for maize
+    for date in all_dates:
+        count = maize_df[maize_df['Fecha'] == date].shape[0]
+        color = get_color(count)
+        fig.add_shape(
+            type="rect",
+            x0=date,
+            x1=date + pd.Timedelta(days=1),
+            y0=0,
+            y1=len(maize_labors),
+            fillcolor=color,
+            line_width=0,
+            layer="below",
+            row=1, col=1
+        )
+
+    # Add color-coded background for beans
+    for date in all_dates:
+        count = beans_df[beans_df['Fecha'] == date].shape[0]
+        color = get_color(count)
+        fig.add_shape(
+            type="rect",
+            x0=date,
+            x1=date + pd.Timedelta(days=1),
+            y0=0,
+            y1=len(beans_labors),
+            fillcolor=color,
+            line_width=0,
+            layer="below",
+            row=2, col=1
+        )
 
     # Maize data
     if maize_labors:
@@ -900,9 +953,12 @@ def update_climate_discrepancies_table(selected_comunidad, selected_month, selec
 
     df['Fecha'] = pd.to_datetime(df['Fecha'])
 
-    # Exclude rows where all five climate columns are empty or NaN
+    # Replace empty strings with NaN
+    df = df.replace(r'^\s*$', pd.NA, regex=True)
+
+    # Exclude rows where all five climate columns are NaN
     climate_columns = ['Soleado', 'Lluvioso', 'Nublado', 'Granizada', 'Helada']
-    df = df.dropna(subset=climate_columns, how='all').replace('', pd.NA).dropna(subset=climate_columns, how='all')
+    df = df.dropna(subset=climate_columns, how='all')
 
     if df.empty:
         return html.Div('No se encontraron datos climáticos válidos para este mes.')
@@ -919,30 +975,30 @@ def update_climate_discrepancies_table(selected_comunidad, selected_month, selec
     }
 
     for condition in climate_columns:
-        condition_df = df.groupby('Fecha')[['Informante', condition]].apply(lambda x: x.dropna().values.tolist()).reset_index()
-        condition_df['Multiple_Responses'] = condition_df[0].apply(lambda x: len(set(response for _, response in x)) > 1)
-        discrepancy_days = condition_df[condition_df['Multiple_Responses']]['Fecha'].tolist()
-
-        for day in discrepancy_days:
-            day_df = df[(df['Fecha'] == day) & (df[condition].notna())]
-            informants_info = '\n'.join([f"• {informant} (Respuesta: {response})" for informant, response in day_df[['Informante', condition]].values if pd.notna(response)])
+        for date, group in df.groupby('Fecha'):
+            # Filter out NaN values for the current condition
+            valid_responses = group[group[condition].notna()]
             
-            if informants_info:
-                if condition != prev_condition:
-                    discrepancy_data.append({
-                        'Categoría': condition,
-                        'Fecha': day.strftime('%d'),
-                        'Informantes': informants_info,
-                        'Color': condition_colors[condition]
-                    })
-                    prev_condition = condition
-                else:
-                    discrepancy_data.append({
-                        'Categoría': '',
-                        'Fecha': day.strftime('%d'),
-                        'Informantes': informants_info,
-                        'Color': condition_colors[condition]
-                    })
+            if len(valid_responses[condition].unique()) > 1:
+                informants_info = '\n'.join([f"• {row['Informante']} (Respuesta: {row[condition]})" 
+                                             for _, row in valid_responses.iterrows()])
+                
+                if informants_info:
+                    if condition != prev_condition:
+                        discrepancy_data.append({
+                            'Categoría': condition,
+                            'Fecha': date.strftime('%d'),
+                            'Informantes': informants_info,
+                            'Color': condition_colors[condition]
+                        })
+                        prev_condition = condition
+                    else:
+                        discrepancy_data.append({
+                            'Categoría': '',
+                            'Fecha': date.strftime('%d'),
+                            'Informantes': informants_info,
+                            'Color': condition_colors[condition]
+                        })
 
     if len(discrepancy_data) == 0:
         return html.Div('No se encontraron días con respuestas diferentes para este mes.')
