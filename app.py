@@ -350,14 +350,9 @@ def update_labor_evolution_graph(selected_comunidad, selected_month, selected_ye
 
     with engine.connect() as conn:
         if selected_informant == 'Todos':
-            maize_query = f"""
-                SELECT "Fecha", "Informante", "Preparación-maíz", "Labranza-maíz", "Fertilización-maíz", "Siembra-maíz", "Aterrada-maíz", "Despunte-maíz", "Cosecha-maíz"
-                FROM table_clima26
-                WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}'
-                ORDER BY "Fecha" ASC;
-            """
-            beans_query = f"""
-                SELECT "Fecha", "Informante", "Labranza-frijol", "Deshierba-frijol", "Siembra-frijol", "Cosecha-frijol"
+            query = f"""
+                SELECT "Fecha", "Informante", "Preparación-maíz", "Labranza-maíz", "Fertilización-maíz", "Siembra-maíz", "Aterrada-maíz", "Despunte-maíz", "Cosecha-maíz",
+                       "Labranza-frijol", "Deshierba-frijol", "Siembra-frijol", "Cosecha-frijol"
                 FROM table_clima26
                 WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}'
                 ORDER BY "Fecha" ASC;
@@ -368,57 +363,40 @@ def update_labor_evolution_graph(selected_comunidad, selected_month, selected_ye
             WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}';
             """
         else:
-            maize_query = f"""
-                SELECT "Fecha", "Informante", "Preparación-maíz", "Labranza-maíz", "Fertilización-maíz", "Siembra-maíz", "Aterrada-maíz", "Despunte-maíz", "Cosecha-maíz"
+            query = f"""
+                SELECT "Fecha", "Informante", "Preparación-maíz", "Labranza-maíz", "Fertilización-maíz", "Siembra-maíz", "Aterrada-maíz", "Despunte-maíz", "Cosecha-maíz",
+                       "Labranza-frijol", "Deshierba-frijol", "Siembra-frijol", "Cosecha-frijol"
                 FROM table_clima26
                 WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}' AND "Informante" = '{selected_informant}'
                 ORDER BY "Fecha" ASC;
             """
-            beans_query = f"""
-                SELECT "Fecha", "Informante", "Labranza-frijol", "Deshierba-frijol", "Siembra-frijol", "Cosecha-frijol"
-                FROM table_clima26
-                WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}' AND "Informante" = '{selected_informant}'
-                ORDER BY "Fecha" ASC;
-            """
-            total_informants_query = f"""
-            SELECT 1 as total_informants;
-            """
+            total_informants_query = "SELECT 1 as total_informants;"
         
-        maize_df = pd.read_sql(maize_query, conn)
-        beans_df = pd.read_sql(beans_query, conn)
+        df = pd.read_sql(query, conn)
         total_informants = pd.read_sql(total_informants_query, conn).iloc[0]['total_informants']
 
-    maize_df['Fecha'] = pd.to_datetime(maize_df['Fecha'])
-    beans_df['Fecha'] = pd.to_datetime(beans_df['Fecha'])
+    df['Fecha'] = pd.to_datetime(df['Fecha'])
 
     maize_labors = ['Preparación', 'Labranza', 'Fertilización', 'Siembra', 'Aterrada', 'Despunte', 'Cosecha']
     maize_labor_columns = ['Preparación-maíz', 'Labranza-maíz', 'Fertilización-maíz', 'Siembra-maíz', 'Aterrada-maíz', 'Despunte-maíz', 'Cosecha-maíz']
 
-    for labor, column in zip(maize_labors, maize_labor_columns):
-        maize_df[labor] = maize_df[column].apply(lambda x: 1 if x == '1.0' else 0)
-
-    maize_data = maize_df.melt(id_vars=['Fecha', 'Informante'], value_vars=maize_labors, var_name='Labor', value_name='Realizó')
-    maize_data = maize_data[maize_data['Realizó'] == 1]
-
     beans_labors = ['Labranza', 'Deshierba', 'Siembra', 'Cosecha']
     beans_labor_columns = ['Labranza-frijol', 'Deshierba-frijol', 'Siembra-frijol', 'Cosecha-frijol']
 
-    for labor, column in zip(beans_labors, beans_labor_columns):
-        beans_df[labor] = beans_df[column].apply(lambda x: 1 if x == '1.0' else 0)
+    for labor, column in zip(maize_labors + beans_labors, maize_labor_columns + beans_labor_columns):
+        df[labor] = df[column].apply(lambda x: 1 if x == '1.0' else 0)
 
-    beans_data = beans_df.melt(id_vars=['Fecha', 'Informante'], value_vars=beans_labors, var_name='Labor', value_name='Realizó')
-    beans_data = beans_data[beans_data['Realizó'] == 1]
+    # Combine maize and beans data
+    all_labors = maize_labors + beans_labors
+    labor_data = df.melt(id_vars=['Fecha', 'Informante'], value_vars=all_labors, var_name='Labor', value_name='Realizó')
+    labor_data = labor_data[labor_data['Realizó'] == 1]
 
-    # Filter out labors with no data
-    maize_labors = [labor for labor in maize_labors if maize_data['Labor'].str.contains(labor).any()]
-    beans_labors = [labor for labor in beans_labors if beans_data['Labor'].str.contains(labor).any()]
+    # Get all unique dates in the month
+    start_date = df['Fecha'].min().replace(day=1)
+    end_date = df['Fecha'].max()
+    all_dates = pd.date_range(start=start_date, end=end_date, freq='D')
 
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.5, 0.5])
-
-    # Get all unique dates
-    all_dates = pd.date_range(start=min(maize_df['Fecha'].min(), beans_df['Fecha'].min()),
-                              end=max(maize_df['Fecha'].max(), beans_df['Fecha'].max()),
-                              freq='D')
 
     # Color coding function
     def get_color(count):
@@ -432,83 +410,62 @@ def update_labor_evolution_graph(selected_comunidad, selected_month, selected_ye
         else:
             return 'rgba(0, 255, 0, 0.2)'  # Green
 
-    # Add color-coded background for maize
+    # Add color-coded background for both maize and beans
     for date in all_dates:
-        count = maize_df[maize_df['Fecha'] == date].shape[0]
-        color = get_color(count)
+        maize_count = df[(df['Fecha'].dt.date == date.date()) & (df[maize_labor_columns].sum(axis=1) > 0)].shape[0]
+        beans_count = df[(df['Fecha'].dt.date == date.date()) & (df[beans_labor_columns].sum(axis=1) > 0)].shape[0]
+        
+        maize_color = get_color(maize_count)
+        beans_color = get_color(beans_count)
+        
         fig.add_shape(
             type="rect",
             x0=date,
             x1=date + pd.Timedelta(days=1),
             y0=0,
             y1=len(maize_labors),
-            fillcolor=color,
+            fillcolor=maize_color,
             line_width=0,
             layer="below",
             row=1, col=1
         )
-
-    # Add color-coded background for beans
-    for date in all_dates:
-        count = beans_df[beans_df['Fecha'] == date].shape[0]
-        color = get_color(count)
         fig.add_shape(
             type="rect",
             x0=date,
             x1=date + pd.Timedelta(days=1),
             y0=0,
             y1=len(beans_labors),
-            fillcolor=color,
+            fillcolor=beans_color,
             line_width=0,
             layer="below",
             row=2, col=1
         )
 
-    # Maize data
-    if maize_labors:
-        for labor in maize_labors:
-            labor_data = maize_data[maize_data['Labor'] == labor]
-            fig.add_trace(go.Scatter(
-                x=labor_data['Fecha'],
-                y=[labor] * len(labor_data),
-                mode='markers',
-                name=labor,
-                marker=dict(size=10),
-                hoverinfo='text',
-                hovertext=[f"{row['Fecha'].strftime('%Y-%m-%d')}: {row['Informante']}" for _, row in labor_data.iterrows()],
-            ), row=1, col=1)
-    else:
-        fig.add_annotation(
-            x=0.5, y=0.5,
-            xref="paper", yref="paper",
-            text="No hay labores registradas para este mes",
-            showarrow=False,
-            font=dict(size=14),
-            row=1, col=1
-        )
+    # Plot maize data
+    for labor in maize_labors:
+        labor_df = labor_data[labor_data['Labor'] == labor]
+        fig.add_trace(go.Scatter(
+            x=labor_df['Fecha'],
+            y=[labor] * len(labor_df),
+            mode='markers',
+            name=labor,
+            marker=dict(size=10),
+            hoverinfo='text',
+            hovertext=[f"{row['Fecha'].strftime('%Y-%m-%d')}: {row['Informante']}" for _, row in labor_df.iterrows()],
+        ), row=1, col=1)
 
-    # Beans data
-    if beans_labors:
-        for labor in beans_labors:
-            labor_data = beans_data[beans_data['Labor'] == labor]
-            fig.add_trace(go.Scatter(
-                x=labor_data['Fecha'],
-                y=[labor] * len(labor_data),
-                mode='markers',
-                name=labor,
-                marker=dict(size=10),
-                hoverinfo='text',
-                hovertext=[f"{row['Fecha'].strftime('%Y-%m-%d')}: {row['Informante']}" for _, row in labor_data.iterrows()],
-            ), row=2, col=1)
-    else:
-        fig.add_annotation(
-            x=0.5, y=0.5,
-            xref="paper", yref="paper",
-            text="No hay labores registradas para este mes",
-            showarrow=False,
-            font=dict(size=14),
-            row=2, col=1
-        )
+    # Plot beans data
+    for labor in beans_labors:
+        labor_df = labor_data[labor_data['Labor'] == labor]
+        fig.add_trace(go.Scatter(
+            x=labor_df['Fecha'],
+            y=[labor] * len(labor_df),
+            mode='markers',
+            name=labor,
+            marker=dict(size=10),
+            hoverinfo='text',
+            hovertext=[f"{row['Fecha'].strftime('%Y-%m-%d')}: {row['Informante']}" for _, row in labor_df.iterrows()],
+        ), row=2, col=1)
 
     # Update layout
     fig.update_layout(
@@ -521,7 +478,7 @@ def update_labor_evolution_graph(selected_comunidad, selected_month, selected_ye
                 standoff=25
             ),
             categoryorder='array',
-            categoryarray=maize_labors[::-1] if maize_labors else []
+            categoryarray=maize_labors[::-1]
         ),
         yaxis2=dict(
             title=dict(
@@ -529,7 +486,7 @@ def update_labor_evolution_graph(selected_comunidad, selected_month, selected_ye
                 standoff=25
             ),
             categoryorder='array',
-            categoryarray=beans_labors[::-1] if beans_labors else []
+            categoryarray=beans_labors[::-1]
         ),
         xaxis2=dict(title='Fecha'),
     )
@@ -540,12 +497,10 @@ def update_labor_evolution_graph(selected_comunidad, selected_month, selected_ye
         tickangle=45,
         tickmode='array',
         tickvals=all_dates,
-        dtick=86400000,  # Show tick for each day
+        range=[start_date, end_date + pd.Timedelta(days=1)],
     )
 
-    fig.update_yaxes(
-        showgrid=False,
-    )
+    fig.update_yaxes(showgrid=False)
 
     return fig
     
@@ -981,7 +936,8 @@ def update_climate_discrepancies_table(selected_comunidad, selected_month, selec
             
             if len(valid_responses[condition].unique()) > 1:
                 informants_info = '\n'.join([f"• {row['Informante']} (Respuesta: {row[condition]})" 
-                                             for _, row in valid_responses.iterrows()])
+                                             for _, row in valid_responses.iterrows()
+                                             if pd.notna(row[condition])])
                 
                 if informants_info:
                     if condition != prev_condition:
@@ -1052,7 +1008,7 @@ def update_climate_discrepancies_table(selected_comunidad, selected_month, selec
         html.H4(f"Días con Discrepancias Climáticas en {selected_comunidad} - {selected_month}/{selected_year}", style={'margin-bottom': '60px'}),
         table
     ], style={'margin-top': '20px', 'margin-bottom': '60px'})
-
+    
 @app.callback(
     Output('frijol-risks-table', 'children'),
     [Input('comunidad-dropdown', 'value'),
