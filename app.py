@@ -413,7 +413,7 @@ def update_evolution_graph(selected_comunidad, selected_month, selected_year, _,
         df = pd.read_sql(query, conn)
 
     df['Fecha'] = pd.to_datetime(df['Fecha'])
-    df['percentage'] = df['daily_informants'] / df['total_informants'] * 100
+    df['percentage'] = df['daily_informants'] / df['total_informants'].iloc[0] * 100
 
     def get_color(percentage):
         if percentage == 0:
@@ -467,7 +467,7 @@ def update_evolution_graph(selected_comunidad, selected_month, selected_year, _,
     maize_labors = ['Preparación-maíz', 'Labranza-maíz', 'Fertilización-maíz', 'Siembra-maíz', 'Aterrada-maíz', 'Despunte-maíz', 'Cosecha-maíz']
     beans_labors = ['Labranza-frijol', 'Deshierba-frijol', 'Siembra-frijol', 'Cosecha-frijol']
 
-    for row, labors in [(4, maize_labors), (5, beans_labors)]:
+    for row_num, labors in [(4, maize_labors), (5, beans_labors)]:
         for labor in labors:
             labor_data = df[df[labor] > 0]
             fig.add_trace(go.Scatter(
@@ -475,12 +475,12 @@ def update_evolution_graph(selected_comunidad, selected_month, selected_year, _,
                 mode='markers', name=labor, marker=dict(size=10),
                 hovertemplate='<b>Fecha</b>: %{x}<br><b>Labor</b>: %{y}<br><b>Informantes</b>: %{text}',
                 text=labor_data[labor]
-            ), row=row, col=1)
+            ), row=row_num, col=1)
 
         fig.update_yaxes(
-            title=dict(text='🌽' if row == 4 else '🫘', font=dict(size=50), standoff=0),
+            title=dict(text='🌽' if row_num == 4 else '🫘', font=dict(size=50), standoff=0),
             categoryorder='array', categoryarray=[l.split('-')[0] for l in labors],
-            row=row, col=1
+            row=row_num, col=1
         )
 
         # Add color-coded background
@@ -493,7 +493,7 @@ def update_evolution_graph(selected_comunidad, selected_month, selected_year, _,
                 fillcolor=row['color'],
                 layer='below',
                 line_width=0,
-                row=row, col=1
+                row=row_num, col=1
             )
 
     fig.update_layout(
@@ -503,7 +503,6 @@ def update_evolution_graph(selected_comunidad, selected_month, selected_year, _,
     )
 
     return fig
-
 
 
 @app.callback(
