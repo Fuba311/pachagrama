@@ -7,3 +7,4 @@ gunicorn
 dash_auth
 psycopg2-binary
 openpyxl
+numpy
