@@ -367,9 +367,27 @@ def update_evolution_graph(selected_comunidad, selected_month, selected_year, _,
         daily_data AS (
             SELECT 
                 "Fecha"::date,
-                AVG("Soleado"::float) AS "Soleado",
-                AVG("Lluvioso"::float) AS "Lluvioso",
-                AVG("Nublado"::float) AS "Nublado",
+                AVG(CASE 
+                    WHEN "Soleado" = 'Nada' THEN 0
+                    WHEN "Soleado" = 'Poco' THEN 1
+                    WHEN "Soleado" = 'Normal' THEN 2
+                    WHEN "Soleado" = 'Mucho' THEN 3
+                    ELSE NULL
+                END) AS "Soleado",
+                AVG(CASE 
+                    WHEN "Lluvioso" = 'Nada' THEN 0
+                    WHEN "Lluvioso" = 'Poco' THEN 1
+                    WHEN "Lluvioso" = 'Normal' THEN 2
+                    WHEN "Lluvioso" = 'Mucho' THEN 3
+                    ELSE NULL
+                END) AS "Lluvioso",
+                AVG(CASE 
+                    WHEN "Nublado" = 'Nada' THEN 0
+                    WHEN "Nublado" = 'Poco' THEN 1
+                    WHEN "Nublado" = 'Normal' THEN 2
+                    WHEN "Nublado" = 'Mucho' THEN 3
+                    ELSE NULL
+                END) AS "Nublado",
                 COUNT(DISTINCT "Informante") AS daily_informants,
                 SUM(CASE WHEN "Preparación-maíz" = '1.0' THEN 1 ELSE 0 END) AS "Preparación-maíz",
                 SUM(CASE WHEN "Labranza-maíz" = '1.0' THEN 1 ELSE 0 END) AS "Labranza-maíz",
