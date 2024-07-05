@@ -585,7 +585,7 @@ def update_labor_activities_graph(selected_comunidad, selected_month, selected_y
                 sizeref=2. * max(data_grouped['Num_Informantes']) / (20. ** 2) if max_informantes > 0 else 1,
                 sizemin=4
             ),
-            name=f'Labores {"Maíz" if row ==name=f'Labores {"Maíz" if row == 1 else "Frijol"}',
+            name=f'Labores {"Maíz" if row == 1 else "Frijol"}',
             hovertemplate=
             '<b>Fecha</b>: %{x}<br>' +
             '<b>Labor</b>: %{y}<br>' +
