@@ -66,10 +66,11 @@ app.layout = dbc.Container([
         style={'margin-top': '20px', 'margin-bottom': '20px'}
     ),
       # Graphs and tables wrapped for visibility control
-    dcc.Loading(id='loading-climate-graph', children=[dcc.Graph(id='climate-evolution-graph')]),
-    dcc.Loading(id='loading-labor-graph', children=[dcc.Graph(id='labor-evolution-graph')]),
+    dcc.Loading(id='loading-div', children=[dcc.Graph(id='evolution-graph')]),
     html.Div(id='graphs-container', children=[
+        dcc.Loading(id='loading-div2', children=[dcc.Graph(id='condition-average-graph')]),
         dcc.Loading(id='loading-div3', children=[html.Div(id='condition-days-table')]),
+        dcc.Loading(id='loading-div4', children=[html.Div(id='weather-condition-frequency')])
     ]),
     html.Div(id='maiz-risks-table'),
     html.Div(id='frijol-risks-table'),
@@ -221,9 +222,6 @@ def handle_file_upload(contents, filename):
         # Extract the year from the 'Fecha' column
         df['Año'] = df['Fecha'].dt.year
 
-        climate_columns = ['Soleado', 'Lluvioso', 'Nublado', 'Granizada', 'Helada']
-        df = df.dropna(subset=climate_columns, how='all').replace('', pd.NA).dropna(subset=climate_columns, how='all')
-
        
         # Merge the informant columns into a single "Informante" column
         df['Informante'] = df[name_columns].apply(lambda x: x.dropna().iloc[0] if x.notna().any() else pd.NA, axis=1)
@@ -244,14 +242,14 @@ def handle_file_upload(contents, filename):
 
         # Use inspect to check if the table exists in the database
         inspector = inspect(engine)
-        table_exists = inspector.has_table('table_clima27')
+        table_exists = inspector.has_table('table_clima28')
 
         if table_exists:
-            existing_ids = pd.read_sql_table('table_clima27', engine, columns=['ID'])['ID'].tolist()
+            existing_ids = pd.read_sql_table('table_clima28', engine, columns=['ID'])['ID'].tolist()
             df = df[~df['ID'].isin(existing_ids)]
 
         if not df.empty:
-            df.to_sql('table_clima27', engine, if_exists='append', index=False)
+            df.to_sql('table_clima28', engine, if_exists='append', index=False)
             upload_timestamp = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
             return html.Div(f"El archivo {filename} se ha subido correctamente."), upload_timestamp
         else:
@@ -266,7 +264,7 @@ def update_comunidad_dropdown(_):
     with engine.connect() as conn:
         # Ensure column names are case-sensitive by using double quotes if the actual column name in the database is mixed-case.
         # Adjust "Comunidad" to match the exact case used in your database table.
-        df = pd.read_sql('SELECT DISTINCT "Comunidad" FROM table_clima27 ORDER BY "Comunidad"', conn)
+        df = pd.read_sql('SELECT DISTINCT "Comunidad" FROM table_clima28 ORDER BY "Comunidad"', conn)
     options = [{'label': comunidad, 'value': comunidad} for comunidad in df['Comunidad'].dropna().tolist()]
     return options
 
@@ -281,7 +279,7 @@ def update_year_dropdown(selected_comunidad, _):
     if selected_comunidad:
         with engine.connect() as conn:
             query = f"""
-            SELECT DISTINCT "Año" FROM table_clima27
+            SELECT DISTINCT "Año" FROM table_clima28
             WHERE "Comunidad" = '{selected_comunidad}'
             ORDER BY "Año";
             """
@@ -303,7 +301,7 @@ def update_month_dropdown(selected_comunidad, selected_year):
         with engine.connect() as conn:
             query = f"""
             SELECT DISTINCT "Mes" 
-            FROM table_clima27 
+            FROM table_clima28 
             WHERE "Año" = '{selected_year}' AND "Comunidad" = '{selected_comunidad}'
             ORDER BY "Mes";
             """
@@ -328,7 +326,7 @@ def update_informant_dropdown(selected_comunidad, selected_year, selected_month,
     if selected_comunidad and selected_year and selected_month:
         with engine.connect() as conn:
             query = f"""
-            SELECT DISTINCT "Informante" FROM table_clima27
+            SELECT DISTINCT "Informante" FROM table_clima28
             WHERE "Comunidad" = '{selected_comunidad}' AND "Año" = '{selected_year}' AND "Mes" = '{selected_month}'
             ORDER BY "Informante";
             """
@@ -336,218 +334,87 @@ def update_informant_dropdown(selected_comunidad, selected_year, selected_month,
         options.extend([{'label': informant, 'value': informant} for informant in df['Informante'].tolist()])
     return options
 
+@app.callback(
+    Output('weather-condition-frequency', 'children'),
+    [Input('month-dropdown', 'value'),
+     Input('year-dropdown', 'value'),
+     Input('comunidad-dropdown', 'value'),
+     Input('upload-timestamp', 'children'),
+     Input('informant-dropdown', 'value')]
+)
+def update_graph(selected_month, selected_year, selected_comunidad, _, selected_informant):
+    if not selected_month or not selected_year or not selected_comunidad:
+        return html.Div("Seleccione una comunidad, un mes y un año para ver los gráficos.", style={'margin-top': '20px'})
+
+    with engine.connect() as conn:
+        if selected_informant == 'Todos':
+            query = f"""
+            SELECT "Fecha", "Informante", "Soleado", "Lluvioso", "Nublado", "Helada", "Granizada"
+            FROM table_clima28
+            WHERE "Mes" = '{selected_month}' AND "Año" = '{selected_year}' AND "Comunidad" = '{selected_comunidad}';
+            """
+        else:
+            query = f"""
+            SELECT "Fecha", "Informante", "Soleado", "Lluvioso", "Nublado", "Helada", "Granizada"
+            FROM table_clima28
+            WHERE "Mes" = '{selected_month}' AND "Año" = '{selected_year}' AND "Comunidad" = '{selected_comunidad}' AND "Informante" = '{selected_informant}';
+            """
+        df = pd.read_sql(query, conn)
+
+    # Fill NaN values with 'Nada' directly for processing
+    df.fillna('Nada', inplace=True)
+
+    # Count the total responses for each condition
+    plot_data = []
+    for condition in ['Soleado', 'Lluvioso', 'Nublado', 'Helada', 'Granizada']:
+        condition_data = df[condition].value_counts().reset_index()
+        condition_data.columns = ['Response', 'Count']
+        condition_data['Condition'] = condition
+        plot_data.append(condition_data)
+
+    plot_df = pd.concat(plot_data, ignore_index=True)
+
+    # Count the total number of responses
+    total_responses = len(df)
+
+    # Define the desired order of responses
+    response_order = ['Nada', 'Poco', 'Normal', 'Mucho']
+
+    fig = px.bar(plot_df, x='Condition', y='Count', color='Response', barmode='group',
+                 title=f"Frecuencia de Condiciones Climáticas para {selected_comunidad} - {selected_month}/{selected_year}",
+                 labels={"Count": "Número de Respuestas", "Condition": "Condición Climática", "Response": "Respuesta"},
+                 text='Count',
+                 category_orders={'Response': response_order})
+
+    fig.update_layout(
+        title={
+            'text': f"Frecuencia de Condiciones Climáticas para {selected_comunidad} - {selected_month}/{selected_year}<br>"
+                    f"Total de Respuestas: {total_responses}",
+            'y': 0.95,
+            'x': 0.5,
+            'xanchor': 'center',
+            'yanchor': 'top'
+        }
+    )
+
+    # Replace any 'nan' in the legend with 'Nada'
+    for trace in fig.data:
+        trace.name = trace.name.replace('nan', 'Nada')
+
+    return dcc.Graph(figure=fig)
+
 
 from pandas import to_numeric
 
 @app.callback(
-    Output('labor-evolution-graph', 'figure'),
+    Output('evolution-graph', 'figure'),
     [Input('comunidad-dropdown', 'value'),
      Input('month-dropdown', 'value'),
      Input('year-dropdown', 'value'),
      Input('upload-timestamp', 'children'),
      Input('informant-dropdown', 'value')]
 )
-def update_labor_evolution_graph(selected_comunidad, selected_month, selected_year, _, selected_informant):
-    if not selected_comunidad or not selected_month or not selected_year or not selected_informant:
-        return go.Figure()
-
-    with engine.connect() as conn:
-        if selected_informant == 'Todos':
-            maize_query = f"""
-                SELECT "Fecha", "Informante", "Preparación-maíz", "Labranza-maíz", "Fertilización-maíz", "Siembra-maíz", "Aterrada-maíz", "Despunte-maíz", "Cosecha-maíz"
-                FROM table_clima27
-                WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}'
-                ORDER BY "Fecha" ASC;
-            """
-            beans_query = f"""
-                SELECT "Fecha", "Informante", "Labranza-frijol", "Deshierba-frijol", "Siembra-frijol", "Cosecha-frijol"
-                FROM table_clima27
-                WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}'
-                ORDER BY "Fecha" ASC;
-            """
-        else:
-            maize_query = f"""
-                SELECT "Fecha", "Informante", "Preparación-maíz", "Labranza-maíz", "Fertilización-maíz", "Siembra-maíz", "Aterrada-maíz", "Despunte-maíz", "Cosecha-maíz"
-                FROM table_clima27
-                WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}' AND "Informante" = '{selected_informant}'
-                ORDER BY "Fecha" ASC;
-            """
-            beans_query = f"""
-                SELECT "Fecha", "Informante", "Labranza-frijol", "Deshierba-frijol", "Siembra-frijol", "Cosecha-frijol"
-                FROM table_clima27
-                WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}' AND "Informante" = '{selected_informant}'
-                ORDER BY "Fecha" ASC;
-            """
-        
-        maize_df = pd.read_sql(maize_query, conn)
-        beans_df = pd.read_sql(beans_query, conn)
-
-        # Get the total number of unique informants
-        total_informants_query = f"""
-        SELECT COUNT(DISTINCT "Informante") as total_informants
-        FROM table_clima27
-        WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}';
-        """
-        total_informants = pd.read_sql(total_informants_query, conn).iloc[0]['total_informants']
-
-    maize_df['Fecha'] = pd.to_datetime(maize_df['Fecha'])
-    beans_df['Fecha'] = pd.to_datetime(beans_df['Fecha'])
-
-    maize_labors = ['Preparación', 'Labranza', 'Fertilización', 'Siembra', 'Aterrada', 'Despunte', 'Cosecha']
-    maize_labor_columns = ['Preparación-maíz', 'Labranza-maíz', 'Fertilización-maíz', 'Siembra-maíz', 'Aterrada-maíz', 'Despunte-maíz', 'Cosecha-maíz']
-
-    for labor, column in zip(maize_labors, maize_labor_columns):
-        maize_df[labor] = maize_df[column].replace({'1.0': 1, '0.0': 0, 'nan': 0}).fillna(0).astype(int)
-
-    maize_data = maize_df.melt(id_vars=['Fecha', 'Informante'], value_vars=maize_labors, var_name='Labor', value_name='Realizó')
-    maize_data = maize_data[maize_data['Realizó'] == 1]
-
-    beans_labors = ['Labranza', 'Deshierba', 'Siembra', 'Cosecha']
-    beans_labor_columns = ['Labranza-frijol', 'Deshierba-frijol', 'Siembra-frijol', 'Cosecha-frijol']
-
-    for labor, column in zip(beans_labors, beans_labor_columns):
-        beans_df[labor] = beans_df[column].replace({'1.0': 1, '0.0': 0, 'nan': 0}).fillna(0).astype(int)
-
-    beans_data = beans_df.melt(id_vars=['Fecha', 'Informante'], value_vars=beans_labors, var_name='Labor', value_name='Realizó')
-    beans_data = beans_data[beans_data['Realizó'] == 1]
-
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.5, 0.5])
-
-    # Color coding function
-    def get_color(count):
-        percentage = count / total_informants * 100
-        if percentage == 0:
-            return 'rgba(255, 0, 0, 0.2)'  # Red
-        elif 0 < percentage < 25:
-            return 'rgba(255, 165, 0, 0.2)'  # Orange
-        elif 25 <= percentage < 75:
-            return 'rgba(255, 255, 0, 0.2)'  # Yellow
-        else:
-            return 'rgba(0, 255, 0, 0.2)'  # Green
-
-    # Get all unique dates
-    all_dates = pd.date_range(start=min(maize_df['Fecha'].min(), beans_df['Fecha'].min()),
-                              end=max(maize_df['Fecha'].max(), beans_df['Fecha'].max()),
-                              freq='D')
-
-    # Add color-coded background for maize
-    for date in all_dates:
-        count = maize_df[maize_df['Fecha'] == date][maize_labor_columns].any(axis=1).sum()
-        color = get_color(count)
-        fig.add_shape(
-            type="rect",
-            x0=date,
-            x1=date + pd.Timedelta(days=1),
-            y0=-0.5,
-            y1=len(maize_labors) - 0.5,
-            fillcolor=color,
-            line_width=0,
-            layer="below",
-            row=1, col=1
-        )
-
-    # Add color-coded background for beans
-    for date in all_dates:
-        count = beans_df[beans_df['Fecha'] == date][beans_labor_columns].any(axis=1).sum()
-        color = get_color(count)
-        fig.add_shape(
-            type="rect",
-            x0=date,
-            x1=date + pd.Timedelta(days=1),
-            y0=-0.5,
-            y1=len(beans_labors) - 0.5,
-            fillcolor=color,
-            line_width=0,
-            layer="below",
-            row=2, col=1
-        )
-
-    # Maize data
-    for labor in maize_labors:
-        labor_data = maize_data[maize_data['Labor'] == labor]
-        sizes = labor_data.groupby('Fecha').size()
-        fig.add_trace(go.Scatter(
-            x=sizes.index,
-            y=[labor] * len(sizes),
-            mode='markers',
-            name=labor,
-            marker=dict(
-                size=sizes.values * 5,  # Adjust the multiplier as needed
-                sizemode='area',
-                sizemin=4,
-                sizeref=2. * max(sizes.values) / (40. ** 2) if len(sizes) > 0 else 1
-            ),
-            hoverinfo='text',
-            hovertext=[f"{date.strftime('%Y-%m-%d')}: {count} informantes" for date, count in sizes.items()],
-        ), row=1, col=1)
-
-    # Beans data
-    for labor in beans_labors:
-        labor_data = beans_data[beans_data['Labor'] == labor]
-        sizes = labor_data.groupby('Fecha').size()
-        fig.add_trace(go.Scatter(
-            x=sizes.index,
-            y=[labor] * len(sizes),
-            mode='markers',
-            name=labor,
-            marker=dict(
-                size=sizes.values * 5,  # Adjust the multiplier as needed
-                sizemode='area',
-                sizemin=4,
-                sizeref=2. * max(sizes.values) / (40. ** 2) if len(sizes) > 0 else 1
-            ),
-            hoverinfo='text',
-            hovertext=[f"{date.strftime('%Y-%m-%d')}: {count} informantes" for date, count in sizes.items()],
-        ), row=2, col=1)
-
-    # Update layout
-    fig.update_layout(
-        showlegend=False,
-        height=400,
-        margin=dict(l=100, r=20, t=20, b=20),
-        yaxis=dict(
-            title=dict(
-                text='<span style="font-size: 30px;">🌽</span>',
-                standoff=25
-            ),
-            categoryorder='array',
-            categoryarray=maize_labors[::-1]
-        ),
-        yaxis2=dict(
-            title=dict(
-                text='<span style="font-size: 30px;">🫘</span>',
-                standoff=25
-            ),
-            categoryorder='array',
-            categoryarray=beans_labors[::-1]
-        ),
-        xaxis2=dict(title='Fecha'),
-    )
-
-    # Update axes
-    fig.update_xaxes(
-        tickformat='%d-%m-%Y',
-        tickangle=45,
-        tickmode='auto',
-        nticks=10,
-        range=[all_dates.min(), all_dates.max()]
-    )
-
-    fig.update_yaxes(
-        showgrid=False,
-    )
-
-    return fig
-    
-@app.callback(
-    Output('climate-evolution-graph', 'figure'),
-    [Input('comunidad-dropdown', 'value'),
-     Input('month-dropdown', 'value'),
-     Input('year-dropdown', 'value'),
-     Input('upload-timestamp', 'children'),
-     Input('informant-dropdown', 'value')]
-)
-def update_climate_evolution_graph(selected_comunidad, selected_month, selected_year, _, selected_informant):
+def update_evolution_graph(selected_comunidad, selected_month, selected_year, _, selected_informant):
     if not selected_comunidad or not selected_month or not selected_year or not selected_informant:
         return go.Figure()
 
@@ -555,133 +422,323 @@ def update_climate_evolution_graph(selected_comunidad, selected_month, selected_
         if selected_informant == 'Todos':
             query = f"""
             SELECT "Fecha", "Soleado", "Lluvioso", "Nublado"
-            FROM table_clima27
+            FROM table_clima28
             WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}'
             ORDER BY "Fecha" ASC;
             """
         else:
             query = f"""
             SELECT "Fecha", "Soleado", "Lluvioso", "Nublado"
-            FROM table_clima27
+            FROM table_clima28
             WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}' AND "Informante" = '{selected_informant}'
             ORDER BY "Fecha" ASC;
             """
         df = pd.read_sql(query, conn)
 
-    df['Fecha'] = pd.to_datetime(df['Fecha'])
-    response_mapping = {'Nada': 0, 'Poco': 1, 'Normal': 2, 'Mucho': 3}
-    df = df.replace(response_mapping)
+        df['Fecha'] = pd.to_datetime(df['Fecha'])
+        response_mapping = {'Nada': 0, 'Poco': 1, 'Normal': 2, 'Mucho': 3}
+        df = df.replace(response_mapping)
 
-    for condition in ['Soleado', 'Lluvioso', 'Nublado']:
-        df[condition] = pd.to_numeric(df[condition], errors='coerce')
+        for condition in ['Soleado', 'Lluvioso', 'Nublado']:
+            df[condition] = pd.to_numeric(df[condition], errors='coerce')
 
-    df[['Soleado', 'Lluvioso', 'Nublado']] = df[['Soleado', 'Lluvioso', 'Nublado']].applymap(lambda x: 0 if pd.isna(x) else x)
+        # Replace NaN with 'Nada' (0) if at least one of the three categories has an answer in the same row
+        df[['Soleado', 'Lluvioso', 'Nublado']] = df[['Soleado', 'Lluvioso', 'Nublado']].applymap(lambda x: 0 if pd.isna(x) else x)
 
-    date_range = pd.date_range(start=df['Fecha'].min(), end=df['Fecha'].max(), freq='D')
+        # Generate date range based on the available dates in the DataFrame
+        date_range = pd.date_range(start=df['Fecha'].min(), end=df['Fecha'].max(), freq='D')
 
-    condition_icons = {
-        'Soleado': '☀️',
-        'Lluvioso': '🌧️',
-        'Nublado': '☁️'
-    }
+        condition_icons = {
+            'Soleado': '☀️',
+            'Lluvioso': '🌧️',
+            'Nublado': '☁️'
+        }
 
-    fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.01, row_heights=[0.33, 0.33, 0.33])
+        fig = make_subplots(rows=5, cols=1, shared_xaxes=True, vertical_spacing=0.01, row_heights=[0.2, 0.2, 0.2, 0.2, 0.2])
 
-    for i, condition in enumerate(['Soleado', 'Lluvioso', 'Nublado']):
-        temp_df = df.groupby('Fecha')[condition].agg(['mean', 'count']).reset_index()
-        temp_df.rename(columns={'mean': 'Response', 'count': 'Count'}, inplace=True)
+        for i, condition in enumerate(['Soleado', 'Lluvioso', 'Nublado']):
+            temp_df = df.groupby('Fecha')[condition].agg(['mean', 'count']).reset_index()
+            temp_df.rename(columns={'mean': 'Response', 'count': 'Count'}, inplace=True)
 
-        informants_df = df.groupby('Fecha').size().reset_index(name='Informants')
-        temp_df = pd.merge(temp_df, informants_df, on='Fecha', how='left')
+            # Calculate the total number of informants for each day
+            informants_df = df.groupby('Fecha').size().reset_index(name='Informants')
+            temp_df = pd.merge(temp_df, informants_df, on='Fecha', how='left')
 
-        fig.add_trace(go.Scatter(
-            x=temp_df['Fecha'],
-            y=temp_df['Response'],
-            mode='lines+markers',
-            line=dict(width=4),
-            marker=dict(size=12),
-            name=condition,
-            hovertemplate=
-            '<b>Fecha</b>: %{x}<br>' +
-            '<b>Índice</b>: %{y}<br>' +
-            '<b>Número de Informantes</b>: %{text}',
-            text=temp_df['Informants']
-        ), row=i+1, col=1)
+            fig.add_trace(go.Scatter(
+                x=temp_df['Fecha'],
+                y=temp_df['Response'],
+                mode='lines+markers',
+                line=dict(width=4),
+                marker=dict(size=12),
+                name=condition,
+                hovertemplate=
+                '<b>Fecha</b>: %{x}<br>' +
+                '<b>Índice</b>: %{y}<br>' +
+                '<b>Número de Informantes</b>: %{text}',
+                text=temp_df['Informants']
+            ), row=i+1, col=1)
 
-        fig.update_yaxes(
-            title=dict(text=condition_icons[condition], font=dict(size=50), standoff=0),
-            title_standoff=20,
-            range=[-0.2, 3.5],
-            tickvals=[0, 1, 2, 3],
-            ticktext=['Nada', 'Poco', 'Normal', 'Mucho'],
-            row=i+1, col=1
-        )
+            fig.update_yaxes(
+                title=dict(text=condition_icons[condition], font=dict(size=50), standoff=0),
+                title_standoff=20,  # Increase the standoff distance to move the titles more to the left
+                range=[-0.2, 3.5],
+                tickvals=[0, 1, 2, 3],
+                ticktext=['Nada', 'Poco', 'Normal', 'Mucho'],
+                row=i+1, col=1
+            )
 
-        fig.update_xaxes(
-            tickmode='auto',
-            nticks=10,
-            tickangle=0,
-            row=i+1, col=1
-        )
+            fig.update_xaxes(
+                tickmode='auto',
+                nticks=10,
+                tickangle=0,
+                row=i+1, col=1
+            )
 
-    # Get the total number of unique informants for the selected community
-    with engine.connect() as conn:
+        # Get the total number of unique informants for the selected community
         total_informants_query = f"""
         SELECT COUNT(DISTINCT "Informante") as total_informants
-        FROM table_clima27
+        FROM table_clima28
         WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}';
         """
         total_informants = pd.read_sql(total_informants_query, conn).iloc[0]['total_informants']
 
-    response_percentage_df = df.groupby('Fecha').size().reset_index(name='num_responses')
-    response_percentage_df['num_responses'] = response_percentage_df['num_responses'].fillna(0)
-    response_percentage_df['percentage'] = response_percentage_df['num_responses'] / total_informants * 100
+        # Create a DataFrame to store the percentage of informants responding for each day
+        response_percentage_df = df.groupby('Fecha').size().reset_index(name='num_responses')
+        response_percentage_df['num_responses'] = response_percentage_df['num_responses'].fillna(0)
+        response_percentage_df['percentage'] = response_percentage_df['num_responses'] / total_informants * 100
 
-    def get_color(percentage, date):
-        if date not in df['Fecha'].values:
-            return 'rgba(255, 0, 0, 0.2)'
-        elif percentage == 0:
-            return 'rgba(255, 0, 0, 0.2)'
-        elif 0 < percentage < 25:
-            return 'rgba(255, 165, 0, 0.2)'
-        elif 25 <= percentage < 75:
-            return 'rgba(255, 255, 0, 0.2)'
+        def get_color(percentage, date):
+            if date not in df['Fecha'].values:
+                return 'rgba(255, 0, 0, 0.2)'  # Red for missing dates
+            elif percentage == 0:
+                return 'rgba(255, 0, 0, 0.2)'  # Red
+            elif 0 < percentage < 25:
+                return 'rgba(255, 165, 0, 0.2)'  # Orange
+            elif 25 <= percentage < 75:
+                return 'rgba(255, 255, 0, 0.2)'  # Yellow
+            else:
+                return 'rgba(0, 255, 0, 0.2)'  # Green
+
+        for date in date_range:
+            if date in response_percentage_df['Fecha'].values:
+                percentage = response_percentage_df.loc[response_percentage_df['Fecha'] == date, 'percentage'].iloc[0]
+            else:
+                percentage = 0
+
+            color = get_color(percentage, date)
+
+            for i in range(5):
+                fig.add_shape(
+                    type='rect',
+                    x0=date - pd.Timedelta(hours=12),  # Adjust the starting position to the middle of the day
+                    y0=0,  # Start from the bottom of the plot
+                    x1=date + pd.Timedelta(hours=12),  # Adjust the ending position to the middle of the next day
+                    y1=4,  # Extend to the top of the plot area
+                    fillcolor=color,
+                    layer='below',
+                    line_width=0,
+                    row=i+1,
+                    col=1
+                )
+
+        # Retrieve data from the database for maize labors
+        if selected_informant == 'Todos':
+            maize_df = pd.read_sql_query(f"""
+                SELECT "Fecha", "Informante", "Preparación-maíz", "Labranza-maíz", "Fertilización-maíz", "Siembra-maíz", "Aterrada-maíz", "Despunte-maíz", "Cosecha-maíz"
+                FROM table_clima28
+                WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}'
+                ORDER BY "Fecha" ASC;
+            """, conn)
         else:
-            return 'rgba(0, 255, 0, 0.2)'
+            maize_df = pd.read_sql_query(f"""
+                SELECT "Fecha", "Informante", "Preparación-maíz", "Labranza-maíz", "Fertilización-maíz", "Siembra-maíz", "Aterrada-maíz", "Despunte-maíz", "Cosecha-maíz"
+                FROM table_clima28
+                WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}' AND "Informante" = '{selected_informant}'
+                ORDER BY "Fecha" ASC;
+            """, conn)
 
-    for date in date_range:
-        if date in response_percentage_df['Fecha'].values:
-            percentage = response_percentage_df.loc[response_percentage_df['Fecha'] == date, 'percentage'].iloc[0]
+        # Retrieve data from the database for beans labors
+        if selected_informant == 'Todos':
+            beans_df = pd.read_sql_query(f"""
+                SELECT "Fecha", "Informante", "Labranza-frijol", "Deshierba-frijol", "Siembra-frijol", "Cosecha-frijol"
+                FROM table_clima28
+                WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}'
+                ORDER BY "Fecha" ASC;
+            """, conn)
         else:
-            percentage = 0
+            beans_df = pd.read_sql_query(f"""
+                SELECT "Fecha", "Informante", "Labranza-frijol", "Deshierba-frijol", "Siembra-frijol", "Cosecha-frijol"
+                FROM table_clima28
+                WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}' AND "Informante" = '{selected_informant}'
+                ORDER BY "Fecha" ASC;
+            """, conn)
 
-        color = get_color(percentage, date)
+        # Process maize data
+        maize_df['Fecha'] = pd.to_datetime(maize_df['Fecha'])
+        maize_labors = ['Preparación', 'Labranza', 'Fertilización', 'Siembra', 'Aterrada', 'Despunte', 'Cosecha']
+        maize_labor_columns = ['Preparación-maíz', 'Labranza-maíz', 'Fertilización-maíz', 'Siembra-maíz', 'Aterrada-maíz', 'Despunte-maíz', 'Cosecha-maíz']
 
-        for i in range(3):
+        for labor, column in zip(maize_labors, maize_labor_columns):
+            maize_df[labor] = maize_df[column].apply(lambda x: 1 if x == '1.0' else pd.NA)
+
+        maize_data = maize_df.melt(id_vars=['Fecha', 'Informante'], value_vars=maize_labors, var_name='Labor', value_name='Realizó')
+        maize_data = maize_data[maize_data['Realizó'].notna()]
+
+        # Filter out labors with no answers for the selected month
+        maize_labors_with_answers = maize_data['Labor'].unique()
+
+        # Process beans data
+        beans_df['Fecha'] = pd.to_datetime(beans_df['Fecha'])
+        beans_labors = ['Labranza', 'Deshierba', 'Siembra', 'Cosecha']
+        beans_labor_columns = ['Labranza-frijol', 'Deshierba-frijol', 'Siembra-frijol', 'Cosecha-frijol']
+
+        for labor, column in zip(beans_labors, beans_labor_columns):
+            beans_df[labor] = beans_df[column].apply(lambda x: 1 if x == '1.0' else pd.NA)
+
+        beans_data = beans_df.melt(id_vars=['Fecha', 'Informante'], value_vars=beans_labors, var_name='Labor', value_name='Realizó')
+        beans_data = beans_data[beans_data['Realizó'].notna()]
+
+        # Filter out labors with no answers for the selected month
+        beans_labors_with_answers = beans_data['Labor'].unique()
+
+        # Group the maize data by date and labor to get the informants for each point
+        maize_data_grouped = maize_data.groupby(['Fecha', 'Labor'])['Informante'].apply(list).reset_index()
+        if maize_data_grouped.empty:
+            maize_data_grouped['Num_Informantes'] = 0
+        maize_data_grouped['Informantes'] = maize_data_grouped['Informante'].apply(lambda x: ', '.join(x))
+        maize_data_grouped['Num_Informantes'] = maize_data_grouped['Informante'].apply(len)
+
+        if not maize_data_grouped.empty:
+            max_informantes = max(maize_data_grouped['Num_Informantes'])
+            marker_size = maize_data_grouped['Num_Informantes'] * 5 if max_informantes > 0 else 10
+        else:
+            max_informantes = 0
+            marker_size = 10
+
+        fig.add_trace(go.Scatter(
+            x=maize_data_grouped['Fecha'],
+            y=maize_data_grouped['Labor'],
+            mode='markers',
+            marker=dict(
+                size=marker_size,
+                sizemode='area',
+                sizeref=2. * max(maize_data_grouped['Num_Informantes']) / (20. ** 2) if max_informantes > 0 else 1,
+                sizemin=4
+            ),
+            name='Labores Maíz',
+            hovertemplate=
+            '<b>Fecha</b>: %{x}<br>' +
+            '<b>Labor</b>: %{y}<br>' +
+            '<b>Informantes</b>: %{text}',
+            text=maize_data_grouped['Informantes']
+        ), row=4, col=1)
+
+        fig.update_yaxes(
+            title=dict(text='🌽', font=dict(size=50), standoff=20),
+            title_standoff=20,  # Increase the standoff distance to move the titles more to the left
+            categoryorder='array',
+            categoryarray=maize_labors_with_answers,
+            row=4, col=1
+        )
+
+        # Apply color coding to maize labors subplot
+        for date in date_range:
+            if date in maize_df['Fecha'].values:
+                percentage = maize_df.loc[maize_df['Fecha'] == date].shape[0] / total_informants * 100
+            else:
+                percentage = 0
+
+            color = get_color(percentage, date)
+
             fig.add_shape(
                 type='rect',
-                x0=date - pd.Timedelta(hours=12),
-                y0=0,
-                x1=date + pd.Timedelta(hours=12),
-                y1=4,
+                x0=date - pd.Timedelta(hours=12),  # Adjust the starting position to the middle of the day
+                y0=-0.5,
+                x1=date + pd.Timedelta(hours=12),  # Adjust the ending position to the middle of the next day
+                y1=len(maize_labors_with_answers) - 0.5,
                 fillcolor=color,
                 layer='below',
                 line_width=0,
-                row=i+1,
+                row=4,
+                col=1)
+
+        # Apply color coding to beans labors subplot
+        for date in date_range:
+            if date in beans_df['Fecha'].values:
+                percentage = beans_df.loc[beans_df['Fecha'] == date].shape[0] / total_informants * 100
+            else:
+                percentage = 0
+
+            color = get_color(percentage, date)
+
+            fig.add_shape(
+                type='rect',
+                x0=date - pd.Timedelta(hours=12),  # Adjust the starting position to the middle of the day
+                y0=-0.5,
+                x1=date + pd.Timedelta(hours=12),  # Adjust the ending position to the middle of the next day
+                y1=len(beans_labors_with_answers) - 0.5,
+                fillcolor=color,
+                layer='below',
+                line_width=0,
+                row=5,
                 col=1
             )
 
-    fig.update_layout(
-        title=dict(text=f'Condiciones Climáticas Diarias para: {selected_month}/{selected_year}', x=0.5),
-        showlegend=True,
-        margin=dict(l=100, r=50, t=90, b=90),
-        height=600
-    )
+        # Group the beans data by date and labor to get the informants for each point
+        beans_data_grouped = beans_data.groupby(['Fecha', 'Labor'])['Informante'].apply(list).reset_index()
+        if beans_data_grouped.empty:
+            beans_data_grouped['Num_Informantes'] = 0
+        beans_data_grouped['Informantes'] = beans_data_grouped['Informante'].apply(lambda x: ', '.join(x))
+        beans_data_grouped['Num_Informantes'] = beans_data_grouped['Informante'].apply(len)
 
-    for i, condition in enumerate(['Soleado', 'Lluvioso', 'Nublado']):
-        fig['layout'][f'yaxis{i+1}']['title']['text'] = f"<span style='margin-right: 20px; transform: rotate(90deg); display: inline-block;'>{condition_icons[condition]}</span>"
+        if not beans_data_grouped.empty:
+            max_informantes2 = max(beans_data_grouped['Num_Informantes'])
+            marker_size2 = beans_data_grouped['Num_Informantes'] * 5 if max_informantes2 > 0 else 10
+        else:
+            max_informantes2 = 0
+            marker_size2 = 10
+
+        fig.add_trace(go.Scatter(
+            x=beans_data_grouped['Fecha'],
+            y=beans_data_grouped['Labor'],
+            mode='markers',
+            marker=dict(
+                size=marker_size2,
+                sizemode='area',
+                sizeref=2. * max(beans_data_grouped['Num_Informantes']) / (20. ** 2) if max_informantes2 > 0 else 1,
+                sizemin=4
+            ),
+            name='Labores Frijol',
+            hovertemplate=
+            '<b>Fecha</b>: %{x}<br>' +
+            '<b>Labor</b>: %{y}<br>' +
+            '<b>Informantes</b>: %{text}',
+            text=beans_data_grouped['Informantes']
+        ), row=5, col=1)
+
+        fig.update_yaxes(
+            title=dict(text='🫘', font=dict(size=50), standoff=20),
+            title_standoff=20,  # Increase the standoff distance to move the titles more to the left
+            categoryorder='array',
+            categoryarray=beans_labors_with_answers,
+            row=5, col=1
+        )
+
+        fig.update_layout(height=1000)  # Adjust the height to accommodate the additional subplots
+
+        fig.update_layout(
+            title=dict(text=f'Condiciones Climáticas Diarias para: {selected_month}/{selected_year}', x=0.5),
+            showlegend=True,
+            margin=dict(l=100, r=50, t=90, b=90)
+        )
+
+        # Move the condition icons to the left and rotate them by 90 degrees
+        for i, condition in enumerate(['Soleado', 'Lluvioso', 'Nublado']):
+            fig['layout'][f'yaxis{i+1}']['title']['text'] = f"<span style='margin-right: 20px; transform: rotate(90deg); display: inline-block;'>{condition_icons[condition]}</span>"
 
     return fig
+
+
 
 @app.callback(
     Output('condition-days-table', 'children'),
@@ -833,89 +890,66 @@ def login(n, username, password):
             return True
     return False
 
+@app.callback(
+    Output('condition-average-graph', 'figure'),  # Ensure you have added a dcc.Graph with this ID in your layout
+    [Input('comunidad-dropdown', 'value'),  # Add comunidad-dropdown as an input
+     Input('year-dropdown', 'value'),
+     Input('upload-timestamp', 'children')]
+)
+def update_condition_average_graph(selected_comunidad, selected_year, _):
+    if selected_year is None or selected_comunidad is None:
+        return go.Figure()  # Return an empty graph if no year or community is selected
+
+    with engine.connect() as conn:
+        # Update query to fetch data for the selected year and community
+        query = f"""
+        SELECT "Mes", "Soleado", "Lluvioso", "Nublado", "Helada"
+        FROM table_clima28 
+        WHERE "Año" = '{selected_year}' AND "Comunidad" = '{selected_comunidad}';
+        """
+        df = pd.read_sql(query, conn)
+
+    # Map string responses to numeric values, ignoring NaNs
+    response_mapping = {'Poco': 1, 'Normal': 2, 'Mucho': 3}
+    for condition in ['Soleado', 'Lluvioso', 'Nublado', 'Helada']:
+        df[condition] = df[condition].map(response_mapping)
+
+    # Compute the average for each condition per month, ignoring NaNs in the calculation
+    monthly_averages = df.groupby('Mes')[['Soleado', 'Lluvioso', 'Nublado', 'Helada']].mean().reset_index()
+    
+    # Dynamically set the month order based on the available data
+    full_month_order = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
+                        'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+    available_months = monthly_averages['Mes'].unique().tolist()
+    month_order = [month for month in full_month_order if month in available_months]
+    
+    # Melt the dataframe to make it suitable for a bar graph with plotly
+    melted_df = monthly_averages.melt(id_vars=['Mes'], var_name='Condición', value_name='Índice Promedio')
+
+    # Ensure the 'Mes' column in melted_df is ordered correctly based on month_order
+    melted_df['Mes'] = pd.Categorical(melted_df['Mes'], categories=month_order, ordered=True)
+
+    # Generate the bar graph
+    fig = px.bar(
+        melted_df,
+        x='Mes',
+        y='Índice Promedio',
+        color='Condición',
+        barmode='group',
+        title=f'Promedio de Condiciones Climáticas por Mes en el Año {selected_year}',
+        category_orders={"Mes": month_order}  # Ensures the x-axis follows the dynamic month order
+    )
+    
+    # Adjust the title to reflect the inclusion of the selected community
+    fig.update_layout(
+        title=f'Promedio de Condiciones Climáticas por Mes para {selected_comunidad} en el Año {selected_year}',
+        xaxis_title='Mes',
+        yaxis_title='Promedio de Respuestas'
+    )
+
+    return fig
 
 from collections import Counter
-
-
-@app.callback(
-    Output('maiz-risks-table', 'children'),
-    [Input('comunidad-dropdown', 'value'),
-     Input('year-dropdown', 'value'),
-     Input('month-dropdown', 'value'),
-     Input('labors-toggle', 'value'),
-     Input('upload-timestamp', 'children'),
-     Input('informant-dropdown', 'value')]
-)
-def update_maiz_risks_table(selected_comunidad, selected_year, selected_month, show_labors, _, selected_informant):
-    if 'show' in show_labors and selected_comunidad and selected_year and selected_month and selected_informant:
-        with engine.connect() as conn:
-            if selected_informant == 'Todos':
-                query = f"""
-                SELECT "Fecha", "Informante", "Riesgo helada-maíz", "Riesgo sequía-maíz", "Riesgo golpe de calor-maíz", "Riesgo inundación-maíz", "Riesgo plagas y enfermedades-maíz", "Riesgo granizada-maíz"
-                FROM table_clima27
-                WHERE "Comunidad" = '{selected_comunidad}' AND "Año" = '{selected_year}' AND "Mes" = '{selected_month}'
-                """
-            else:
-                query = f"""
-                SELECT "Fecha", "Informante", "Riesgo helada-maíz", "Riesgo sequía-maíz", "Riesgo golpe de calor-maíz", "Riesgo inundación-maíz", "Riesgo plagas y enfermedades-maíz", "Riesgo granizada-maíz"
-                FROM table_clima27
-                WHERE "Comunidad" = '{selected_comunidad}' AND "Año" = '{selected_year}' AND "Mes" = '{selected_month}' AND "Informante" = '{selected_informant}'
-                """
-            df = pd.read_sql(query, conn)
-
-
-        df['Fecha'] = pd.to_datetime(df['Fecha'])
-        df['Día'] = df['Fecha'].dt.strftime('%d')
-
-        risks = ['Helada', 'Sequía', 'Golpe de calor', 'Inundación', 'Plagas y enfermedades', 'Granizada']
-        risk_columns = ['Riesgo helada-maíz', 'Riesgo sequía-maíz', 'Riesgo golpe de calor-maíz', 'Riesgo inundación-maíz', 'Riesgo plagas y enfermedades-maíz', 'Riesgo granizada-maíz']
-
-        informants = df['Informante'].unique()
-
-        table_data = []
-        for risk, column in zip(risks, risk_columns):
-            risk_data = {'Riesgo': risk}
-            for informant in informants:
-                risk_data[informant] = ', '.join(df[(df[column] == '1.0') & (df['Informante'] == informant)]['Día'].tolist())
-            table_data.append(risk_data)
-
-        columns = [{'name': 'Riesgo', 'id': 'Riesgo'}] + [{'name': informant, 'id': informant} for informant in informants]
-
-        table = dash_table.DataTable(
-            data=table_data,
-            columns=columns,
-            style_cell={
-                'textAlign': 'left',
-                'padding': '8px',
-                'whiteSpace': 'normal',
-                'height': 'auto',
-                'backgroundColor': 'rgb(230, 240, 250)',  # Light blue cell background
-                'color': 'black'  # Black text color for readability
-            },
-            style_header={
-                'backgroundColor': 'rgb(100, 150, 250)',  # Darker blue header
-                'fontWeight': 'bold',
-                'color': 'white'  # White header text
-            },
-            style_as_list_view=True,
-            style_table={
-                'width': '100%',
-                'borderRadius': '10px',
-                'overflow': 'hidden'
-            },
-            style_data={
-                'whiteSpace': 'normal',
-                'height': 'auto',
-                'lineHeight': '15px'
-            }
-        )
-
-        return html.Div([
-            html.H4(f"Fechas del mes con problemas para el cultivo de Maíz en {selected_comunidad} - {selected_month}/{selected_year}", style={'margin-bottom': '60px'}),
-            table
-        ], style={'margin-top': '20px', 'margin-bottom': '60px'})
-    else:
-        return ""
 
 @app.callback(
     Output('climate-discrepancies-table', 'children'),
@@ -932,7 +966,7 @@ def update_climate_discrepancies_table(selected_comunidad, selected_month, selec
     with engine.connect() as conn:
         query = f"""
         SELECT "Fecha", "Informante", "Soleado", "Lluvioso", "Nublado"
-        FROM table_clima27
+        FROM table_clima28
         WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}'
         ORDER BY "Fecha" ASC;
         """
@@ -1029,7 +1063,87 @@ def update_climate_discrepancies_table(selected_comunidad, selected_month, selec
         html.H4(f"Días con Discrepancias Climáticas en {selected_comunidad} - {selected_month}/{selected_year}", style={'margin-bottom': '60px'}),
         table
     ], style={'margin-top': '20px', 'margin-bottom': '60px'})
-    
+
+@app.callback(
+    Output('maiz-risks-table', 'children'),
+    [Input('comunidad-dropdown', 'value'),
+     Input('year-dropdown', 'value'),
+     Input('month-dropdown', 'value'),
+     Input('labors-toggle', 'value'),
+     Input('upload-timestamp', 'children'),
+     Input('informant-dropdown', 'value')]
+)
+def update_maiz_risks_table(selected_comunidad, selected_year, selected_month, show_labors, _, selected_informant):
+    if 'show' in show_labors and selected_comunidad and selected_year and selected_month and selected_informant:
+        with engine.connect() as conn:
+            if selected_informant == 'Todos':
+                query = f"""
+                SELECT "Fecha", "Informante", "Riesgo helada-maíz", "Riesgo sequía-maíz", "Riesgo golpe de calor-maíz", "Riesgo inundación-maíz", "Riesgo plagas y enfermedades-maíz", "Riesgo granizada-maíz"
+                FROM table_clima28
+                WHERE "Comunidad" = '{selected_comunidad}' AND "Año" = '{selected_year}' AND "Mes" = '{selected_month}'
+                """
+            else:
+                query = f"""
+                SELECT "Fecha", "Informante", "Riesgo helada-maíz", "Riesgo sequía-maíz", "Riesgo golpe de calor-maíz", "Riesgo inundación-maíz", "Riesgo plagas y enfermedades-maíz", "Riesgo granizada-maíz"
+                FROM table_clima28
+                WHERE "Comunidad" = '{selected_comunidad}' AND "Año" = '{selected_year}' AND "Mes" = '{selected_month}' AND "Informante" = '{selected_informant}'
+                """
+            df = pd.read_sql(query, conn)
+
+
+        df['Fecha'] = pd.to_datetime(df['Fecha'])
+        df['Día'] = df['Fecha'].dt.strftime('%d')
+
+        risks = ['Helada', 'Sequía', 'Golpe de calor', 'Inundación', 'Plagas y enfermedades', 'Granizada']
+        risk_columns = ['Riesgo helada-maíz', 'Riesgo sequía-maíz', 'Riesgo golpe de calor-maíz', 'Riesgo inundación-maíz', 'Riesgo plagas y enfermedades-maíz', 'Riesgo granizada-maíz']
+
+        informants = df['Informante'].unique()
+
+        table_data = []
+        for risk, column in zip(risks, risk_columns):
+            risk_data = {'Riesgo': risk}
+            for informant in informants:
+                risk_data[informant] = ', '.join(df[(df[column] == '1.0') & (df['Informante'] == informant)]['Día'].tolist())
+            table_data.append(risk_data)
+
+        columns = [{'name': 'Riesgo', 'id': 'Riesgo'}] + [{'name': informant, 'id': informant} for informant in informants]
+
+        table = dash_table.DataTable(
+            data=table_data,
+            columns=columns,
+            style_cell={
+                'textAlign': 'left',
+                'padding': '8px',
+                'whiteSpace': 'normal',
+                'height': 'auto',
+                'backgroundColor': 'rgb(230, 240, 250)',  # Light blue cell background
+                'color': 'black'  # Black text color for readability
+            },
+            style_header={
+                'backgroundColor': 'rgb(100, 150, 250)',  # Darker blue header
+                'fontWeight': 'bold',
+                'color': 'white'  # White header text
+            },
+            style_as_list_view=True,
+            style_table={
+                'width': '100%',
+                'borderRadius': '10px',
+                'overflow': 'hidden'
+            },
+            style_data={
+                'whiteSpace': 'normal',
+                'height': 'auto',
+                'lineHeight': '15px'
+            }
+        )
+
+        return html.Div([
+            html.H4(f"Fechas del mes con problemas para el cultivo de Maíz en {selected_comunidad} - {selected_month}/{selected_year}", style={'margin-bottom': '60px'}),
+            table
+        ], style={'margin-top': '20px', 'margin-bottom': '60px'})
+    else:
+        return ""
+
 @app.callback(
     Output('frijol-risks-table', 'children'),
     [Input('comunidad-dropdown', 'value'),
@@ -1045,13 +1159,13 @@ def update_frijol_risks_table(selected_comunidad, selected_year, selected_month,
             if selected_informant == 'Todos':
                 query = f"""
                 SELECT "Fecha", "Informante", "Riesgo helada-frijol", "Riesgo sequía-frijol", "Riesgo golpe de calor-frijol", "Riesgo inundación-frijol", "Riesgo plagas y enfermedades-frijol", "Riesgo granizada-frijol"
-                FROM table_clima27
+                FROM table_clima28
                 WHERE "Comunidad" = '{selected_comunidad}' AND "Año" = '{selected_year}' AND "Mes" = '{selected_month}'
                 """
             else:
                 query = f"""
                 SELECT "Fecha", "Informante", "Riesgo helada-frijol", "Riesgo sequía-frijol", "Riesgo golpe de calor-frijol", "Riesgo inundación-frijol", "Riesgo plagas y enfermedades-frijol", "Riesgo granizada-frijol"
-                FROM table_clima27
+                FROM table_clima28
                 WHERE "Comunidad" = '{selected_comunidad}' AND "Año" = '{selected_year}' AND "Mes" = '{selected_month}' AND "Informante" = '{selected_informant}'
                 """
             df = pd.read_sql(query, conn)
@@ -1135,14 +1249,14 @@ def update_maiz_status_graph(selected_comunidad, selected_month, selected_year, 
             if selected_informant == 'Todos':
                 query = f"""
                 SELECT "Fecha", "Estado del maíz"
-                FROM table_clima27
+                FROM table_clima28
                 WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}'
                 ORDER BY "Fecha" ASC;
                 """
             else:
                 query = f"""
                 SELECT "Fecha", "Estado del maíz"
-                FROM table_clima27
+                FROM table_clima28
                 WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}' AND "Informante" = '{selected_informant}'
                 ORDER BY "Fecha" ASC;
                 """
@@ -1204,14 +1318,14 @@ def update_frijol_status_graph(selected_comunidad, selected_month, selected_year
             if selected_informant == 'Todos':
                 query = f"""
                 SELECT "Fecha", "Estado del frijol"
-                FROM table_clima27
+                FROM table_clima28
                 WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}'
                 ORDER BY "Fecha" ASC;
                 """
             else:
                 query = f"""
                 SELECT "Fecha", "Estado del frijol"
-                FROM table_clima27
+                FROM table_clima28
                 WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}' AND "Informante" = '{selected_informant}'
                 ORDER BY "Fecha" ASC;
                 """
@@ -1272,7 +1386,7 @@ def update_informant_ranking(selected_comunidad, selected_month, selected_year, 
     with engine.connect() as conn:
         query = f"""
         SELECT "Informante", COUNT(DISTINCT "Fecha") AS "Días Respondidos"
-        FROM table_clima27
+        FROM table_clima28
         WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}'
         GROUP BY "Informante"
         ORDER BY "Días Respondidos" DESC
@@ -1326,5 +1440,7 @@ def toggle_graph_visibility(show_labors):
 
 if __name__ == '__main__':
     app.run_server(debug=True)
+
+
 
 
