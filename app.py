@@ -785,6 +785,9 @@ def login(n, username, password):
 
 from collections import Counter
 
+Here is the updated callback that omits the rows where all five climate responses are empty or NaN:
+
+```python
 @app.callback(
     Output('climate-discrepancies-table', 'children'),
     [Input('comunidad-dropdown', 'value'),
@@ -811,33 +814,32 @@ def update_climate_discrepancies_table(selected_comunidad, selected_month, selec
 
     df['Fecha'] = pd.to_datetime(df['Fecha'])
 
-    # Filter out rows where all climate responses are empty or NaN
-    climate_columns = ['Soleado', 'Lluvioso', 'Nublado', 'Granizada', 'Helada']
-    df = df[df[climate_columns].notna().any(axis=1)]
+    # Filter out rows where all five climate responses are NaN or empty
+    df = df.dropna(subset=['Soleado', 'Lluvioso', 'Nublado', 'Granizada', 'Helada'], how='all')
 
     discrepancy_data = []
     prev_condition = None
 
     condition_colors = {
-        'Soleado': 'rgb(200, 220, 255)',  
+        'Soleado': 'rgb(200, 220, 255)',
         'Lluvioso': 'rgb(200, 220, 255)',
-        'Nublado': 'rgb(200, 220, 255)'  
+        'Nublado': 'rgb(200, 220, 255)'
     }
 
     for condition in ['Soleado', 'Lluvioso', 'Nublado']:
-        condition_df = df.groupby('Fecha')[['Informante', condition]].apply(lambda x: x.dropna().values.tolist()).reset_index()
+        condition_df = df.groupby('Fecha')[['Informante', condition]].apply(lambda x: x.values.tolist()).reset_index()
         condition_df['Multiple_Responses'] = condition_df[0].apply(lambda x: len(set(response for _, response in x)) > 1)
         discrepancy_days = condition_df[condition_df['Multiple_Responses']]['Fecha'].tolist()
 
         for day in discrepancy_days:
             day_df = df[(df['Fecha'] == day) & (df[condition].notna())]
-            informants_info = '\n'.join([f"• {informant} (Respuesta: {response})" for informant, response in day_df[['Informante', condition]].values])
-            
+            informants_info = '\n'.join([f"• {informant} (Respuesta: {response if pd.notna(response) else 'Nada'})" for informant, response in day_df[['Informante', condition]].values])
+
             if condition != prev_condition:
                 discrepancy_data.append({
                     'Categoría': condition,
                     'Fecha': day.strftime('%d'),
-                    'Informantes': informants_info,
+                    'Informantes': informants_info.replace('nan', 'Nada'),  # Replace 'nan' with 'Nada'
                     'Color': condition_colors[condition]
                 })
                 prev_condition = condition
@@ -845,7 +847,7 @@ def update_climate_discrepancies_table(selected_comunidad, selected_month, selec
                 discrepancy_data.append({
                     'Categoría': '',
                     'Fecha': day.strftime('%d'),
-                    'Informantes': informants_info,
+                    'Informantes': informants_info.replace('nan', 'Nada'),  # Replace 'nan' with 'Nada'
                     'Color': condition_colors[condition]
                 })
 
@@ -876,13 +878,13 @@ def update_climate_discrepancies_table(selected_comunidad, selected_month, selec
             'padding': '8px',
             'whiteSpace': 'normal',
             'height': 'auto',
-            'color': 'black'
+            'color': 'black'  # Black text color for readability
         },
         style_data_conditional=style_data_conditional,
         style_header={
-            'backgroundColor': 'rgb(100, 150, 250)',
+            'backgroundColor': 'rgb(100, 150, 250)',  # Darker blue header
             'fontWeight': 'bold',
-            'color': 'white'
+            'color': 'white'  # White header text
         },
         style_as_list_view=True,
         style_table={
