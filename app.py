@@ -785,9 +785,6 @@ def login(n, username, password):
 
 from collections import Counter
 
-Here is the updated callback that omits the rows where all five climate responses are empty or NaN:
-
-```python
 @app.callback(
     Output('climate-discrepancies-table', 'children'),
     [Input('comunidad-dropdown', 'value'),
