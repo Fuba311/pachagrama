@@ -354,14 +354,14 @@ def update_climate_conditions_graph(selected_comunidad, selected_month, selected
         if selected_informant == 'Todos':
             query = f"""
             SELECT "Fecha", "Soleado", "Lluvioso", "Nublado"
-            FROM table_clima26
+            FROM table_clima28
             WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}'
             ORDER BY "Fecha" ASC;
             """
         else:
             query = f"""
             SELECT "Fecha", "Soleado", "Lluvioso", "Nublado"
-            FROM table_clima26
+            FROM table_clima28
             WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}' AND "Informante" = '{selected_informant}'
             ORDER BY "Fecha" ASC;
             """
@@ -425,7 +425,7 @@ def update_climate_conditions_graph(selected_comunidad, selected_month, selected
 
         total_informants_query = f"""
         SELECT COUNT(DISTINCT "Informante") as total_informants
-        FROM table_clima26
+        FROM table_clima28
         WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}';
         """
         total_informants = pd.read_sql(total_informants_query, conn).iloc[0]['total_informants']
@@ -499,7 +499,7 @@ def update_labor_activities_graph(selected_comunidad, selected_month, selected_y
                        "Preparación-maíz", "Labranza-maíz", "Fertilización-maíz", "Siembra-maíz", 
                        "Aterrada-maíz", "Despunte-maíz", "Cosecha-maíz",
                        "Labranza-frijol", "Deshierba-frijol", "Siembra-frijol", "Cosecha-frijol"
-                FROM table_clima26
+                FROM table_clima28
                 WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}'
                 ORDER BY "Fecha" ASC;
             """
@@ -509,7 +509,7 @@ def update_labor_activities_graph(selected_comunidad, selected_month, selected_y
                        "Preparación-maíz", "Labranza-maíz", "Fertilización-maíz", "Siembra-maíz", 
                        "Aterrada-maíz", "Despunte-maíz", "Cosecha-maíz",
                        "Labranza-frijol", "Deshierba-frijol", "Siembra-frijol", "Cosecha-frijol"
-                FROM table_clima26
+                FROM table_clima28
                 WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}' AND "Informante" = '{selected_informant}'
                 ORDER BY "Fecha" ASC;
             """
@@ -518,7 +518,7 @@ def update_labor_activities_graph(selected_comunidad, selected_month, selected_y
 
         total_informants_query = f"""
         SELECT COUNT(DISTINCT "Informante") as total_informants
-        FROM table_clima26
+        FROM table_clima28
         WHERE "Comunidad" = '{selected_comunidad}' AND "Mes" = '{selected_month}' AND "Año" = '{selected_year}';
         """
         total_informants = pd.read_sql(total_informants_query, conn).iloc[0]['total_informants']
